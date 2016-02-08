@@ -1,0 +1,14 @@
+name:              Gazzerion
+version:           1.0
+Build-Type:        Simple
+cabal-version:     >= 1.2
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Card
+  build-depends:       random
+
+executable Gazzerion
+  main-is:         Main.hs
+  hs-source-dirs:  src
+  build-depends:   base

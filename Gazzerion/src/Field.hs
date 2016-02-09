@@ -65,7 +65,7 @@ refreshTree t forest defaultSize = t' where
 refreshCoordinate :: (Tree, Int) -> State -> ModCard -> Tree
 refreshCoordinate ((Fork c s trees), n) (State x y t) old_c = Fork c s' $ map (\z->refreshCoordinate z s' c) $ zip trees $ map (`mod` 4) [4-turn s..]
     where s' = connectedState (Fork c s trees) n (State x y t) old_c
-refreshCoordinate ((Passage p), n) (State x y t) c' = Passage p
+refreshCoordinate ((Passage p), _) _ _ = Passage p
 refreshCoordinate (DeadEnd, _) _ _ = DeadEnd
 -- おけない場所のDeadEnd化
 refreshPassage ((Fork c s trees), _) _ _ f d = Fork c s $ map (\z->refreshPassage z s c f d) $ zip trees $ map (`mod` 4) [4-turn s..]
@@ -79,17 +79,36 @@ refreshPassage ((Passage p), n) (State x y t) c f d = if cannotPutFlag then Dead
      cannotPutFlag = foldl (&&) True [(posx a) < 0 || (posx a) + width (size c) > (width fieldSize) || (posy a) < 0 || (posy a) + height (size c) > (height fieldSize) | a <- doubleCardPos]
 
      --コリジョンチェック
-     collision (State sx sy st) ss (Fork tc (State tx ty tt) ttree) =
-        if detect then True -- 現在の節についてコリジョンチェック
-            else True `elem` [collision (State sx sy st) ss mtree | mtree <- ttree] where -- 枝についてコリジョンチェック
-                tsize = normalizeCardSize tt (size tc)
-                detect = True `elem` [mx >= tx && mx < tx + width tsize && my >= ty && my < ty + height tsize | mx<-[sx..sx+width ss], my<-[sy..sy+height ss]]
-     collision _ _ _ = False
-
      collisionDetection = True `elem` [foldl (&&) True [collision (doubleCardPos!!a) (normalizeCardSize a d) mytree| a <- [0, 1]] | mytree <- f]
 
 refreshPassage (DeadEnd, _) _ _ _ _ = DeadEnd
 
+-- おける場所のPassage ID
+--getCanPutPassageIDs :: ModCard -> Int -> [Tree] -> [[Int]]
+getCanPutPassageIDs crd trn ts =[getCanPutPassageIDsByTree crd trn (mytree, 0) DeadEnd ts | mytree <- ts]
+--getCanPutPassageIDsByTree :: ModCard -> Int -> (Tree, Int) -> Tree -> [Tree] -> [Int]
+getCanPutPassageIDsByTree crd trn ((Fork c s t), _) _ f = foldl (++) [] $ map (\x -> getCanPutPassageIDsByTree crd trn x (Fork c s t) f) $ zip t $ map (`mod` 4) [4-turn s..]
+getCanPutPassageIDsByTree crd trn ((Passage p), n) (Fork c s t) f = if (parentCnctor < 0 || parentCnctor == (connector crd)!!((n + trn + 2) `mod` 4)) && not collisionDetection
+    then [p]
+    else [] where
+        parentCnctor = (connector c)!!((n + turn s) `mod` 4)
+        tempCard = Fork crd (State 0 0 trn) []
+        connected = connectedState tempCard n s c
+        collisionDetection = True `elem` [collision connected (normalizeCardSize trn (size crd)) mytree | mytree <- f]
+getCanPutPassageIDsByTree _ _ ((DeadEnd), _) _ _ = []
+
+-- 衝突判定
+--      state   : 置こうとしているカードの位置
+--      size    : 置こうとしているカードの正規化済みサイズ
+--      tree    : 探索対象の木
+collision :: State -> Size -> Tree -> Bool
+collision (State sx sy st) ss (Fork tc (State tx ty tt) ttree) =
+    if detect -- 現在の節についてコリジョンチェック
+        then True
+        else True `elem` [collision (State sx sy st) ss mtree | mtree <- ttree] where -- 枝についてコリジョンチェック
+            tsize = normalizeCardSize tt (size tc)
+            detect = True `elem` [mx >= tx && mx < tx + width tsize && my >= ty && my < ty + height tsize | mx<-[sx..sx+width ss], my<-[sy..sy+height ss]]
+collision _ _ _ = False
 
 -- カード連結後の座標計算
 --      fork    : 連結する側の情報
@@ -109,4 +128,5 @@ connectedState (Fork c s _) n (State x y t) c' = State x' y' (turn s) where
         _ -> y + ((height turnedPSize - height turnedCSize) `div` 2)
 
 -- カードサイズの向きによる正規化
+normalizeCardSize :: Int -> Size -> Size
 normalizeCardSize t s = if t `mod` 2 == 0 then s else Size{width = height(s), height = width(s)}

@@ -5,9 +5,10 @@ main = do
     rnd1 <- randCard
     rnd2 <- randCard
     rnd3 <- randCard
-    let tree = initiation rnd1 (State 0 0 0)
-        tree2 = insertCard 2 rnd2 (State 0 0 1) tree
-        tree3 = insertCard 6 rnd3 (State 0 0 1) tree2
+    let tree = initiation rnd1 0
+        tree2 = insertCard 1 rnd2 1 tree
+        tree3 = insertCard 6 rnd2 1 tree2
+        tree4 = refreshTree tree3 [tree3] (Size 6 4)
 
-    print $ take 4 $ unusedPassage tree3
-    print tree3
+    print $ take 4 $ unusedPassage tree4
+    print tree4

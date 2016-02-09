@@ -84,9 +84,9 @@ refreshPassage ((Passage p), n) (State x y t) c f d = if cannotPutFlag then Dead
 refreshPassage (DeadEnd, _) _ _ _ _ = DeadEnd
 
 -- おける場所のPassage ID
---getCanPutPassageIDs :: ModCard -> Int -> [Tree] -> [[Int]]
+getCanPutPassageIDs :: ModCard -> Int -> [Tree] -> [[Int]]
 getCanPutPassageIDs crd trn ts =[getCanPutPassageIDsByTree crd trn (mytree, 0) DeadEnd ts | mytree <- ts]
---getCanPutPassageIDsByTree :: ModCard -> Int -> (Tree, Int) -> Tree -> [Tree] -> [Int]
+getCanPutPassageIDsByTree :: ModCard -> Int -> (Tree, Int) -> Tree -> [Tree] -> [Int]
 getCanPutPassageIDsByTree crd trn ((Fork c s t), _) _ f = foldl (++) [] $ map (\x -> getCanPutPassageIDsByTree crd trn x (Fork c s t) f) $ zip t $ map (`mod` 4) [4-turn s..]
 getCanPutPassageIDsByTree crd trn ((Passage p), n) (Fork c s t) f = if (parentCnctor < 0 || parentCnctor == (connector crd)!!((n + trn + 2) `mod` 4)) && not collisionDetection
     then [p]

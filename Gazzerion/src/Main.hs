@@ -10,5 +10,5 @@ main = do
         tree3 = insertCard 6 rnd3 1 tree2
         tree4 = refreshTree tree3 [tree3] (Size 6 4)
 
-    print $ getCanPutPassageIDs rnd1 0 [tree4]
+    print $ getCanPutPassageIDs rnd1 1 [tree4]
     print tree4

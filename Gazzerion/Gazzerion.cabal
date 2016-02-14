@@ -6,7 +6,7 @@ cabal-version:     >= 1.2
 library
   hs-source-dirs:      src
   exposed-modules:     Card
-  build-depends:       random, lens
+  build-depends:       random, lens, free-game, mtl, transformers
 
 executable Gazzerion
   main-is:         Main.hs

@@ -6,7 +6,7 @@ import Control.Lens
 fieldSize = Size 18 24
 
 -- カードの状態 x y turn
-data State = State{_posx :: Int, _posy :: Int, _turn :: Int} deriving Show
+data States = States{_posx :: Int, _posy :: Int, _turn :: Int} deriving Show
 
 -- ギャザリオンの木
 -- DeadEnd = 接続不可能な枝
@@ -16,10 +16,10 @@ data State = State{_posx :: Int, _posy :: Int, _turn :: Int} deriving Show
 --      ModCard : カード
 --      State   : 座標・回転
 --      [Tree]  : 次の木
-data Tree = DeadEnd | Passage Int | Fork {_card :: ModCard, _state :: State, _trees :: [Tree]} deriving Show
+data Tree = DeadEnd | Passage Int | Fork { _card :: ModCard, _states :: States, _trees :: [Tree]} deriving Show
 
 makeLenses ''Tree
-makeLenses ''State
+makeLenses ''States
 
 -- 木にCard yを追加
 --      x   : 追加される枝のPassage ID
@@ -42,7 +42,7 @@ usedPassage DeadEnd = []
 
 -- Card xをTreeに変換
 toTree :: ModCard -> Int -> Tree -> [Int] -> Tree
-toTree x s tree ignores = Fork x (State 0 0 s) forks2
+toTree x s tree ignores = Fork x (States 0 0 s) forks2
     where
         -- PassageID割り当て
         un = (unusedPassage tree)
@@ -64,29 +64,29 @@ initiation x s = toTree x s (DeadEnd) []
 --      size    : 最小のカードサイズ（このカードが置けなかったらDeadEnd）
 refreshTree :: Tree -> [Tree] -> Size -> Tree
 refreshTree t forest defaultSize = t' where
-    t1 = refreshCoordinate (t, 4) (State 0 0 0) (_card t)
-    t' = refreshPassage (t1, 4) (State 0 0 0) (_card t1) forest defaultSize
+    t1 = refreshCoordinate (t, 4) (States 0 0 0) (_card t)
+    t' = refreshPassage (t1, 4) (States 0 0 0) (_card t1) forest defaultSize
 -- 座標伝搬
 --      tree    : 更新対象の木
 --      n       : 親からみた自分の位置
 --      state   : 親の状態
 --      old_c   : 親のカード
-refreshCoordinate :: (Tree, Int) -> State -> ModCard -> Tree
-refreshCoordinate ((Fork c s trees), n) (State x y t) old_c = Fork c s' $ map (\z->refreshCoordinate z s' c) $ zip trees $ map (`mod` 4) [4-s^.turn..]
-    where s' = connectedState (Fork c s trees) n (State x y t) old_c
+refreshCoordinate :: (Tree, Int) -> States -> ModCard -> Tree
+refreshCoordinate ((Fork c s trees), n) (States x y t) old_c = Fork c s' $ map (\z->refreshCoordinate z s' c) $ zip trees $ map (`mod` 4) [4-s^.turn..]
+    where s' = connectedState (Fork c s trees) n (States x y t) old_c
 refreshCoordinate ((Passage p), _) _ _ = Passage p
 refreshCoordinate (DeadEnd, _) _ _ = DeadEnd
 -- おけない場所のDeadEnd化
-refreshPassage :: (Tree, Int) -> State -> ModCard -> [Tree] -> Size -> Tree
+refreshPassage :: (Tree, Int) -> States -> ModCard -> [Tree] -> Size -> Tree
 refreshPassage ((Fork c s trees), _) _ _ f d = Fork c s $ map (\z->refreshPassage z s c f d) $ zip trees $ map (`mod` 4) [4-s^.turn..]
-refreshPassage ((Passage p), n) (State x y t) c f d = if cannotPutFlag then DeadEnd
+refreshPassage ((Passage p), n) (States x y t) c f d = if cannotPutFlag then DeadEnd
         else if collisionDetection then DeadEnd
          else Passage p
     where
      --フィールドオーバーチェック
-     doubleCard = [Fork (ModCard [-1,-1,-1,-1] d 0) (State 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版
-     doubleCardPos = [connectedState a n (State x y t) c | a <- doubleCard] -- doubleCard連結後の座標
-     cannotPutFlag = foldl (&&) True [a^.posx < 0 || a^.posx + c^.size^.width > fieldSize^.width || a^.posy < 0 || a^.posy + c^.size^.height > fieldSize^.height | a <- doubleCardPos]
+     doubleCard = [Fork (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版
+     doubleCardPos = [connectedState a n (States x y t) c | a <- doubleCard] -- doubleCard連結後の座標
+     cannotPutFlag = and [a^.posx < 0 || a^.posx + c^.size^.width > fieldSize^.width || a^.posy < 0 || a^.posy + c^.size^.height > fieldSize^.height | a <- doubleCardPos]
      --コリジョンチェック
      collisionDetection = True `elem` [foldl (&&) True [collision (doubleCardPos!!a) (normalizeCardSize a d) mytree| a <- [0, 1]] | mytree <- f]
 refreshPassage (DeadEnd, _) _ _ _ _ = DeadEnd
@@ -100,7 +100,7 @@ getCanPutPassageIDsByTree crd trn ((Passage p), n) (Fork c s t) f = if (parentCn
     then [p]
     else [] where
         parentCnctor = (c^.connector)!!((n + s^.turn) `mod` 4)
-        tempCard = Fork crd (State 0 0 trn) []
+        tempCard = Fork crd (States 0 0 trn) []
         connected = connectedState tempCard n s c
         collisionDetection = True `elem` [collision connected (normalizeCardSize trn (crd^.size)) mytree | mytree <- f]
 getCanPutPassageIDsByTree _ _ ((DeadEnd), _) _ _ = []
@@ -109,11 +109,11 @@ getCanPutPassageIDsByTree _ _ ((DeadEnd), _) _ _ = []
 --      state   : 置こうとしているカードの位置
 --      size    : 置こうとしているカードの正規化済みサイズ
 --      tree    : 探索対象の木
-collision :: State -> Size -> Tree -> Bool
-collision (State sx sy st) ss (Fork tc (State tx ty tt) ttree) =
+collision :: States -> Size -> Tree -> Bool
+collision (States sx sy st) ss (Fork tc (States tx ty tt) ttree) =
     if detect -- 現在の節についてコリジョンチェック
         then True
-        else True `elem` [collision (State sx sy st) ss mtree | mtree <- ttree] where -- 枝についてコリジョンチェック
+        else True `elem` [collision (States sx sy st) ss mtree | mtree <- ttree] where -- 枝についてコリジョンチェック
             tsize = normalizeCardSize tt (tc^.size)
             detect = True `elem` [mx >= tx && mx < tx + tsize^.width && my >= ty && my < ty + tsize^.height | mx<-[sx..sx+ss^.width], my<-[sy..sy+ss^.height]]
 collision _ _ _ = False
@@ -123,8 +123,8 @@ collision _ _ _ = False
 --      n       : 親からみた自分の位置
 --      state   : 親の状態
 --      old_c   : 親のカード
-connectedState :: Tree -> Int -> State -> ModCard -> State
-connectedState (Fork c s _) n (State x y t) c' = State x' y' (s^.turn) where
+connectedState :: Tree -> Int -> States -> ModCard -> States
+connectedState (Fork c s _) n (States x y t) c' = States x' y' (s^.turn) where
     turnedPSize = normalizeCardSize t (c'^.size)
     turnedCSize = normalizeCardSize (s^.turn) (c^.size)
     x' = case n of

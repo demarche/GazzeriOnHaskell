@@ -8,7 +8,7 @@ import Control.Monad.State
 
 v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
 
-data Mode = Init | Choice | Move Int | Scroll Double | Dist Double | Goto Mode
+data Mode = Init | Choice | Move | Scroll Double | Dist Double | Goto Mode
 
 data Enviroment = Enviroment
     { _grid :: Int
@@ -32,11 +32,12 @@ data World = World
     , _handcards :: [[ModCard]]
     , _magics :: [[ModCard]]
     , _initiations :: [Bool]
+    , _selectedhandcard :: Int
     }
 makeLenses ''World
 makeLenses '' Enviroment
 
-makeWorld font = World Init (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 640 480) 2 0 [15, 15] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True]
+makeWorld font = World Init (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 640 480) 2 0 [15, 15] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1)
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置

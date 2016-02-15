@@ -37,13 +37,18 @@ update = do
         mode .= Choice
       Choice -> do
         mb <- mouseButtonL
-        when (selectedhk >= 0 && mb) $  mode .= Goto (Move selectedhk)
-      Move nhk -> do
+        when (selectedhk >= 0 && mb) $ do
+            selectedhandcard .= selectedhk
+            mode .= Goto Move
+      Move -> do
+        nhk <- use selectedhandcard
         let nowcard = (hcards!!now)!!nhk
         mp <- mousePosition
         mb <- mouseButtonL
         translate (mp - 0.5 * (v2Int (env^.grid * nowcard^.size^.width) (env^.grid * nowcard^.size^.height))) $ drawCard nowcard env
-        when (mb && nhk == selectedhk) $ mode .= Goto Choice
+        when (mb && nhk == selectedhk) $ do
+            selectedhandcard .= -1
+            mode .= Goto Choice
       Goto goto -> do
         mb <- mouseButtonL
         unless mb $ mode .= goto

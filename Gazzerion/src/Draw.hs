@@ -60,6 +60,7 @@ drawPlayerCards = do
     hcards <- use handcards
     myfont <- use font
     now <- use nowplayer
+    nhk <- use selectedhandcard
     mpos <- mousePosition
     let charsize :: Double
         charsize = sqrt $ fromIntegral (2 * csize^.width * csize^.height * env^.grid)
@@ -82,7 +83,7 @@ drawPlayerCards = do
                  translate (v2Int (myx + env^.grid * (1 + csize^.width `div` 2)) (myy + env^.grid * (1 + csize^.height `div` 2)) - charhlf) $ text myfont charsize (deckstr i)
                 let fx x = myx + env^.grid * (2 + csize^.width * (1 + x)) -- x枚目の手札の左上x座標
                     fy = myy + env^.grid    -- 手札の左上y座標
-                forM_ [0..length(myhk)-1] $ \x -> translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
+                forM_ [0..length(myhk)-1] $ \x -> when (i == now && x /= nhk || i /= now) $ translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
                 let ptlst = [n | n <- [0..length(hcards!!i)-1], -- カーソルの位置取得
                         (itod . fx) n <= mpos^._x && itod (env^.grid * (myhk!!n)^.size^.width + fx n) > mpos^._x && itod fy <= mpos^._y && itod (env^.grid * (myhk!!n)^.size^.height + fy) > mpos^._y]
                     pt = if null ptlst then -1 else ptlst!!0

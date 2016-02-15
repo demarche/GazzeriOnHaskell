@@ -37,11 +37,16 @@ update = do
         mode .= Choice
       Choice -> do
         mb <- mouseButtonL
-        when (selectedhk >= 0 && mb) $  mode .= Move selectedhk
+        when (selectedhk >= 0 && mb) $  mode .= Goto (Move selectedhk)
       Move nhk -> do
         let nowcard = (hcards!!now)!!nhk
         mp <- mousePosition
+        mb <- mouseButtonL
         translate (mp - 0.5 * (v2Int (env^.grid * nowcard^.size^.width) (env^.grid * nowcard^.size^.height))) $ drawCard nowcard env
+        when (mb && nhk == selectedhk) $ mode .= Goto Choice
+      Goto goto -> do
+        mb <- mouseButtonL
+        unless mb $ mode .= goto
     color red $ translate (V2 24 120) $ text font 24 "Press ESC to exit"
   where
     p0 = V2 390 320

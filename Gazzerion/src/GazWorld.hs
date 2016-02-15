@@ -8,7 +8,7 @@ import Control.Monad.State
 
 v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
 
-data Mode = Init | Choice | Move Int | Scroll Double | Dist Double
+data Mode = Init | Choice | Move Int | Scroll Double | Dist Double | Goto Mode
 
 data Enviroment = Enviroment
     { _grid :: Int

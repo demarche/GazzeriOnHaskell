@@ -1,43 +1,12 @@
-{-# LANGUAGE TemplateHaskell #-}
 module GazWorld where
 import Card
-import Field
+import Header
 import FreeGame
+import Field
 import Control.Lens
 import Control.Monad.State
 
-v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
-
-data Mode = Init | Choice | Move | Scroll Double | Dist Double | Goto Mode
-
-data Enviroment = Enviroment
-    { _grid :: Int
-    , _gridx :: Int
-    , _gridy :: Int
-    , _gridw :: Int
-    , _gridh :: Int}
-data World = World
-    {_mode :: Mode
-    , _cardsizeMax :: Size
-    , _font :: Font
-    , _fieldsize :: Size
-    , _enviroment :: Enviroment
-    , _screensize :: Size
-    , _maxplayer :: Int
-    , _nowplayer :: Int
-    , _deckmax :: [Int]
-    , _maxhandcards :: [Int]
-    , _maxmagiccards :: [Int]
-    , _decks :: [[ModCard]]
-    , _handcards :: [[ModCard]]
-    , _magics :: [[ModCard]]
-    , _initiations :: [Bool]
-    , _selectedhandcard :: Int
-    }
-makeLenses ''World
-makeLenses '' Enviroment
-
-makeWorld font = World Init (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 640 480) 2 0 [15, 15] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1)
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 640 480) 2 0 [15, 15] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] []
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -55,7 +24,7 @@ updateEnv = do
 initDecks :: StateT World Game ()
 initDecks = do
     dmax <- use deckmax
-    let getDeck n = replicateM n $ embedIO $ randCard
+    let getDeck n = replicateM n $ embedIO $ randCard2
     dks <- forM dmax $ \x -> getDeck x
     decks .= dks
 
@@ -73,3 +42,16 @@ deckTohand = do
     handcards .= newhk
     newdk <- flip execStateT deckis $ ix now .= drop drawnum nowdk
     decks .= newdk
+
+updateField :: StateT World (StateT World Game) ()
+updateField = do
+    msize <- use cardsizeMin
+    fld <- use field
+    forM_ fld $ \f -> refreshTree2 f fld msize
+    field .= refreshTree fld msize
+    embedIO $ print $ fld
+    put =<< execStateT getCanPuts =<< get
+    cpts <- use canputs
+    embedIO $ print $ cpts
+    fld3 <- use field
+    embedIO $ print $ fld3

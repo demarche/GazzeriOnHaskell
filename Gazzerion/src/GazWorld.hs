@@ -43,18 +43,19 @@ deckTohand = do
     newdk <- flip execStateT deckis $ ix now .= drop drawnum nowdk
     decks .= newdk
 
-updateField :: StateT World (StateT World Game) ()
-updateField = do
-    msize <- use cardsizeMin
-    fld <- use field
-    --forM_ fld $ \f -> refreshTree2 f fld msize
-    field .= refreshTree fld msize
-    --fld3 <- use field
-    --embedIO $ print $ fld3
-
 --全流れ
 fieldclear world = getCanPuts $ (world&field.~[])&initiations.~replicate (world^.maxplayer) True
 
 --次のプレイヤーへ
 nextplayer :: World -> World
 nextplayer world = world&nowplayer.~((1 + world^.nowplayer) `mod` world^.maxplayer)
+
+--手札からn枚目のカードをドリップ
+dripHandcard :: Int -> StateT World (StateT World Game) ModCard
+dripHandcard n = do
+    now <- use nowplayer
+    hcards <- use handcards
+    let nowhcard = hcards!!now
+        nowcard = nowhcard!!n
+    handcards .= (take now hcards) ++ [(take n nowhcard) ++ (drop (n + 1) nowhcard)] ++ (drop (now + 1) hcards)
+    return nowcard

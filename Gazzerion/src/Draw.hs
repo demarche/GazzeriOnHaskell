@@ -41,14 +41,14 @@ fixturn v2 t wid hei = V2 (fx (v2^._x)) (fy (v2^._y)) where
        | otherwise = (+0)
 
 drawTree tree env = case tree of
-    Fork c s t -> do
-        translate (fixturn (v2Int mx my) (s^.turn) wid hei) $ rotateD deg $ drawCard (_card tree) env
-        forM_ t $ \u -> drawTree u env where
-            deg = itod $ 360 * s^.turn `div` length (c^.connector)
-            wid = c^.size^.width * env^.grid
-            hei = c^.size^.height * env^.grid
-            mx = s^.posx * env^.grid + env^.gridx
-            my = s^.posy * env^.grid + env^.gridy
+    Fork h -> do
+        let deg = itod $ 360 * h^.states^.turn `div` length (h^.card^.connector)
+            wid = h^.card^.size^.width * env^.grid
+            hei = h^.card^.size^.height * env^.grid
+            mx = h^.states^.posx * env^.grid + env^.gridx
+            my = h^.states^.posy * env^.grid + env^.gridy
+        translate (fixturn (v2Int mx my) (h^.states^.turn) wid hei) $ rotateD deg $ drawCard (h^.card) env
+        forM_ (h^.trees) $ \u -> drawTree u env
     _ -> line[V2 0 0, V2 0 0]
 
 drawGrid world = do

@@ -46,6 +46,9 @@ data World = World
 -- カードの状態 x y turn
 data States = States{_posx :: Int, _posy :: Int, _turn :: Int} deriving (Eq, Show)
 
+-- 接続カード
+data Hub = Hub{ _card :: ModCard, _states :: States, _trees :: [Tree]} deriving Show
+
 -- ギャザリオンの木
 -- DeadEnd = 接続不可能な枝
 -- Passage = 接続可能な枝
@@ -54,9 +57,9 @@ data States = States{_posx :: Int, _posy :: Int, _turn :: Int} deriving (Eq, Sho
 --      ModCard : カード
 --      State   : 座標・回転
 --      [Tree]  : 次の木
-data Tree = DeadEnd | Passage Int | Fork { _card :: ModCard, _states :: States, _trees :: [Tree]} deriving Show
+data Tree = DeadEnd | Passage Int | Fork Hub deriving Show
 
-makeLenses ''Tree
+makeLenses ''Hub
 makeLenses ''States
 makeLenses ''World
 makeLenses '' Enviroment

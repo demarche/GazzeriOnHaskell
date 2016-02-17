@@ -11,27 +11,27 @@ fieldSize = Size 18 24
 --      x   : 追加される枝のPassage ID
 --      y   : 追加したいカード
 --      s   : カードの状態
---      t   : 追加される木
+--      ts  : 追加される木
 insertCard :: Int -> ModCard -> Int -> [Tree] -> [Tree]
 insertCard x y s ts = inserts x tree ts where
     tree = toTree y (States 0 0 s) ts [x + 2]
 inserts :: Int -> Tree -> [Tree] -> [Tree]
 inserts x y ts = map (\t -> insert x y t) ts
-insert x y (Fork c s t) = Fork c s $ map (insert x y) t
+insert x y (Fork h) = Fork $ h&trees.~map (insert x y) (h^.trees)
 insert x y (Passage p) = if x == p then y else Passage p
 insert _ _ DeadEnd = DeadEnd
 
 -- 未使用PassageIDを木から探索
 unusedPassage :: [Tree] -> [Int]
 unusedPassage t = [x | x <-[0..], not (x `elem` usedPassages t)]
-usedPassages ts = foldl (++) [] $ map usedPassage ts
-usedPassage (Fork _ _ t) = foldl (++) [] $ map usedPassage t
+usedPassages ts = concat $ map usedPassage ts
+usedPassage (Fork h) = concat $ map usedPassage (h^.trees)
 usedPassage (Passage p) = [p]
 usedPassage DeadEnd = []
 
 -- Card xをTreeに変換
 toTree :: ModCard -> States -> [Tree] -> [Int] -> Tree
-toTree x s trees ignores = Fork x s forks2
+toTree x s trees ignores = Fork (Hub x s forks2)
     where
         -- PassageID割り当て
         un = (unusedPassage trees)
@@ -45,130 +45,121 @@ toTree x s trees ignores = Fork x s forks2
 -- イニシエーション
 initiation x s ts = (toTree x s ts []):ts
 
--- tree更新
---      tree    : 更新する木
---      [tree]  : フィールドの木全体
---      size    : 最小のカードサイズ（このカードが置けなかったらDeadEnd）
-refreshTree :: [Tree] -> Size -> [Tree]
-refreshTree forest defaultSize = f' where
-    f1 = [refreshCoordinate (t, 4) (States (-100) 0 0) (_card t) | t <- forest]
-    f' = [refreshPassage (t1, 4) (States 0 0 0) (_card t1) f1 defaultSize | t1 <- f1]
+-- フィールド更新
+updateField :: World -> World
+updateField world = world&field.~f' where
+    f1 = map propCoordinate (world^.field)
+    f' = [appDeadend t1 (world^.cardsizeMin) (world^.fieldsize) f1 | t1 <- f1]
 -- 座標伝搬
 --      tree    : 更新対象の木
 --      n       : 親からみた自分の位置
 --      state   : 親の状態
 --      old_c   : 親のカード
-refreshCoordinate :: (Tree, Int) -> States -> ModCard -> Tree
-refreshCoordinate ((Fork c s trees), n) (States x y t) old_c = Fork c s' $ map (\z->refreshCoordinate z s' c) $ zip trees $ map (`mod` 4) [4-s^.turn..]
-    where s' = if x /= -100 then connectedState (Fork c s trees) n (States x y t) old_c else s
-refreshCoordinate ((Passage p), _) _ _ = Passage p
-refreshCoordinate (DeadEnd, _) _ _ = DeadEnd
+propCoordinate :: Tree -> Tree
+propCoordinate tree = case tree of
+    (Fork h) -> Fork (h&trees.~(map prop $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+        prop (child, n) = case child of
+            (Fork hc) -> propCoordinate $ Fork (hc&states.~(connectedState hc h n))
+            _ -> child
+    _ -> tree
 -- おけない場所のDeadEnd化
-refreshPassage :: (Tree, Int) -> States -> ModCard -> [Tree] -> Size -> Tree
-refreshPassage ((Fork c s trees), _) _ _ f d = Fork c s $ map (\z->refreshPassage z s c f d) $ zip trees $ map (`mod` 4) [4-s^.turn..]
-refreshPassage ((Passage p), n) (States x y t) c f d = if cannotPutFlag || collisionDetection then DeadEnd
-    else Passage p
-    where
-        --フィールドオーバーチェック
-        doubleCard = [Fork (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版
-        doubleCardPos = [connectedState a n (States x y t) c | a <- doubleCard] -- doubleCard連結後の座標
-        cannotPutFlag = and [a^.posx < 0 || a^.posx + (normalizeCardSize (a^.turn) d)^.width > fieldSize^.width ||
-            a^.posy < 0 || a^.posy + (normalizeCardSize (a^.turn) d)^.height > fieldSize^.height | a <- doubleCardPos]
-        --コリジョンチェック
-        collisionDetection = True `elem` [and [collision (doubleCardPos!!a) (normalizeCardSize a d) mytree| a <- [0, 1]] | mytree <- f]
-refreshPassage (DeadEnd, _) _ _ _ _ = DeadEnd
+appDeadend :: Tree -> Size -> Size -> [Tree] -> Tree
+appDeadend tree d fsize f = case tree of
+    (Fork h) ->  Fork (h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+        app (child, n) = case child of
+            (Passage p) -> if cannotPutFlag || collisionDetection then DeadEnd else Passage p where
+                --フィールドオーバーチェック
+                doubleCardTmp = [Hub (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版（座標未計算）
+                doubleCard = [a&states.~(connectedState a h n) | a <- doubleCardTmp] -- 上記の座標計算済み
+                cannotPutFlag = and [fieldover a d fsize | a <- map (\x -> x^.states) doubleCard]
+                --コリジョンチェック
+                collisionDetection = and [isCollision a f | a <- doubleCard]
+            _ -> appDeadend child d fsize f
+    _ -> tree
 
-refreshTree2 t forest defaultSize = do
-    let t1 = refreshCoordinate (t, 4) (States (-100) 0 0) (_card t)
-    refreshCoordinate2 (t1, 4) (States (-100) 0 0) (_card t1)
-    refreshPassage2 (t1, 4) (States 0 0 0) (_card t1) forest defaultSize
-refreshCoordinate2 ((Fork c s trees), n) st old_c = do
-    embedIO $ print $ "Card" ++ (show s')
-    forM_ (zip trees (map (`mod` 4) [4-s^.turn..])) $ (\z->refreshCoordinate2 z s' c)
-    where s' = if (st^.posx) /= -100 then connectedState (Fork c s trees) n st old_c else s
-refreshCoordinate2 ((Passage p), _) _ _ = embedIO $ print $ "Passage : " ++ (show p)
-refreshCoordinate2 (DeadEnd, _) _ _ = embedIO $ print $ "DeadEnd"
-refreshPassage2 ((Fork c s trees), _) _ _ f d = do
-    embedIO $ print $ "Card"
-    embedIO $ print $ s
-    forM_ (zip trees (map (`mod` 4) [4-s^.turn..])) $ (\z->refreshPassage2 z s c f d)
-refreshPassage2 ((Passage p), n) (States x y t) c f d = do
-    embedIO $ print $ "Passage : " ++ (show p) ++ ", n : " ++ (show n)
-    embedIO $ print $ doubleCardPos
-    embedIO $ print $ cannotPutFlag
-    embedIO $ print $ collisionDetection
-    embedIO $ print $ [collision (doubleCardPos!!a) (normalizeCardSize a d) (f!!0)| a <- [0, 1]]
-    where
-     --フィールドオーバーチェック
-     --abc = if p `mod` 4 == n then False else True
-     doubleCard = [Fork (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版
-     doubleCardPos = [connectedState a n (States x y t) c | a <- doubleCard] -- doubleCard連結後の座標
-     cannotPutFlag = and [a^.posx < 0 || a^.posx + (normalizeCardSize (a^.turn) d)^.width > fieldSize^.width ||
-        a^.posy < 0 || a^.posy + (normalizeCardSize (a^.turn) d)^.height > fieldSize^.height | a <- doubleCardPos]
-     --コリジョンチェック
-     collisionDetection = True `elem` [and [collision (doubleCardPos!!a) (normalizeCardSize a d) mytree| a <- [0, 1]] | mytree <- f]
-refreshPassage2 (DeadEnd, _) _ _ _ _ = embedIO $ print "dead"
+showcanputs world = forM_ ((world^.handcards)!!(world^.nowplayer)) $ \crd -> forM_ (world^.field) $ \tree -> forM_ [0..length (crd^.connector)-1] $ \trn -> showcanput crd trn tree world
+showcanput crd trn tree world = case tree of
+    (Fork h) -> forM_ (zip (h^.trees) (map (`mod` 4) [4-h^.states^.turn..])) $ \z -> putlist z where
+        putlist (child, n) = case child of
+            (Fork hc) -> forM_ (hc^.trees) $ \t -> showcanput crd trn t world
+            (Passage p) -> do
+                embedIO $ print $ "parent: " ++ (show parentConnector) ++ ", child: " ++ (show childConnector)
+                embedIO $ print $ not colDetection
+                embedIO $ print $ not cannotPutFlag where
+                    parentConnector = (h^.card^.connector)!!((n + h^.states^.turn) `mod` 4)
+                    childConnector = (crd^.connector)!!((n + trn + 2) `mod` 4)
+                    --衝突判定
+                    connected = connectedState (Hub crd (States 0 0 trn) []) h n
+                    colDetection = True `elem` [isCollision (Hub crd connected []) (world^.field)]
+                    --フィールドオーバーチェック
+                    cannotPutFlag = fieldover connected (crd^.size) (world^.fieldsize)
+            _ -> embedIO $ print ""
+    _ -> embedIO $ print ""
 
 -- おける場所のPassage ID
 getCanPuts :: World -> World
-getCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (world^.handcards)!!(world^.nowplayer)]where
-    normalputs = \crd -> concat $ [getCanPutNoInit crd trn (tree, 0) DeadEnd (world^.field) | tree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
-    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer)
-        then concat $ [getCanPutInit crd trn world | trn <- [0..length (crd^.connector)-1]]
+getCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (world^.handcards)!!(world^.nowplayer)] where
+    normalputs = \crd -> concat $ [canput crd trn tree world | tree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
+    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer) -- イニシエーション可能の時だけイニシエーションラインの置ける場所をチェック
+        then concat $ [canputInit crd trn world | trn <- [0..length (crd^.connector)-1]]
         else []
-getCanPutNoInit :: ModCard -> Int -> (Tree, Int) -> Tree -> [Tree] -> [(Int, States)]
-getCanPutNoInit crd trn ((Fork c s t), _) _ f = foldl (++) [] $ map (\x -> getCanPutNoInit crd trn x (Fork c s t) f) $ zip t $ map (`mod` 4) [4-s^.turn..]
-getCanPutNoInit crd trn ((Passage p), n) (Fork c s t) f = if (parentCnctor < 0 || parentCnctor == (crd^.connector)!!((n + trn + 2) `mod` 4)) && not collisionDetection && not cannotPutFlag
-    then [(p, connected)]
-    else [] where
-        --衝突判定
-        parentCnctor = (c^.connector)!!((n + s^.turn) `mod` 4)
-        tempCard = Fork crd (States 0 0 trn) []
-        connected = connectedState tempCard n s c
-        collisionDetection = True `elem` [collision connected (normalizeCardSize trn (crd^.size)) mytree | mytree <- f]
-        --フィールドオーバーチェック
-        cannotPutFlag = connected^.posx < 0 || connected^.posx + (normalizeCardSize trn (crd^.size))^.width > fieldSize^.width ||
-            connected^.posy < 0 || connected^.posy + (normalizeCardSize trn (crd^.size))^.height > fieldSize^.height
-getCanPutNoInit _ _ ((DeadEnd), _) _ _ = []
-getCanPutInit :: ModCard -> Int -> World -> [(Int, States)]
-getCanPutInit crd trn world = filter iscol allinitposes where
+canput :: ModCard -> Int -> Tree -> World -> [(Int, States)]
+canput crd trn tree world = case tree of
+    (Fork h) -> concat $ map putlist $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..] where
+        putlist (child, n) = case child of
+            (Fork hc) -> canput crd trn (Fork hc) world
+            (Passage p) -> if (parentConnector < 0 || parentConnector == childConnector) && not colDetection && not cannotPutFlag then [(p, connected)] else [] where
+                parentConnector = (h^.card^.connector)!!((n + h^.states^.turn) `mod` 4)
+                childConnector = (crd^.connector)!!((n + trn + 2) `mod` 4)
+                --衝突判定
+                connected = connectedState (Hub crd (States 0 0 trn) []) h n
+                colDetection = True `elem` [isCollision (Hub crd connected []) (world^.field)]
+                --フィールドオーバーチェック
+                cannotPutFlag = fieldover connected (crd^.size) (world^.fieldsize)
+            _ -> []
+    _ -> []
+canputInit :: ModCard -> Int -> World -> [(Int, States)]
+canputInit crd trn world = filter iscol allinitposes where
     turned = normalizeCardSize trn (crd^.size)
     fsize = world^.fieldsize
     allinitposes = case (world^.nowplayer) `mod` 4 of
         0 -> [(-1, States x (fsize^.height - turned^.height) trn) | x <- [0..(fsize^.width - turned^.width)]]
         1 -> [(-1, States x 0 trn) | x <- [0..(fsize^.width - turned^.width)]]
-    iscol = \x -> not $  True `elem` [collision (snd x) turned mytree | mytree <- (world^.field)]
+    iscol = \x -> not $ isCollision (Hub crd (snd x) []) (world^.field)
+
+-- フィールドオーバー判定
+fieldover :: States -> Size -> Size -> Bool
+fieldover st csize fsize = st^.posx < 0 || st^.posx + (normalizeCardSize (st^.turn) csize)^.width > fsize^.width || st^.posy < 0 || st^.posy + (normalizeCardSize (st^.turn) csize)^.height > fsize^.height
 
 -- 衝突判定
---      state   : 置こうとしているカードの位置
---      size    : 置こうとしているカードの正規化済みサイズ
+--      Hub     : 置こうとしているハブ
 --      tree    : 探索対象の木
-collision :: States -> Size -> Tree -> Bool
-collision (States sx sy st) ss (Fork tc (States tx ty tt) ttree) =
-    if detect -- 現在の節についてコリジョンチェック
-        then True
-        else True `elem` [collision (States sx sy st) ss mtree | mtree <- ttree] where -- 枝についてコリジョンチェック
-            tsize = normalizeCardSize tt (tc^.size)
-            detect = True `elem` [mx >= tx && mx < tx + tsize^.width && my >= ty && my < ty + tsize^.height | mx<-[sx..sx+ss^.width-1], my<-[sy..sy+ss^.height-1]]
-collision _ _ _ = False
+isCollision :: Hub -> [Tree] -> Bool
+isCollision h f = True `elem ` [collisionCheck (h^.states) normalized t | t <- f]　where normalized = normalizeCardSize (h^.states^.turn) (h^.card^.size)
+collisionCheck :: States -> Size -> Tree -> Bool
+collisionCheck (States sx sy st) ss tree = case tree of
+    (Fork h) ->if detect then True else True `elem` [collisionCheck (States sx sy st) ss mtree | mtree <- h^.trees] where -- 枝についてコリジョンチェック
+            tsize = normalizeCardSize (h^.states^.turn) (h^.card^.size)
+            tx = h^.states^.posx; ty = h^.states^.posy
+            detect = True `elem` [mx >= tx && mx < tx + tsize^.width && my >= ty && my < ty + tsize^.height | mx<-[sx..sx+ss^.width-1], my<-[sy..sy+ss^.height-1]] -- 現在の節についてコリジョンチェック
+    _ -> False
 
 -- カード連結後の座標計算
---      fork    : 連結する側の情報
+--      Hub     : 子の情報
+--      Hub'    : 親の情報
 --      n       : 親からみた自分の位置
---      state   : 親の状態
---      old_c   : 親のカード
-connectedState :: Tree -> Int -> States -> ModCard -> States
-connectedState (Fork c s _) n (States x y t) c' = States x' y' (s^.turn) where
-    turnedPSize = normalizeCardSize t (c'^.size)
+connectedState :: Hub -> Hub -> Int -> States
+connectedState (Hub c s _) (Hub c' s' _) n = States x' y' (s^.turn) where
+    turnedPSize = normalizeCardSize (s'^.turn) (c'^.size)
     turnedCSize = normalizeCardSize (s^.turn) (c^.size)
     x' = case n of
-        1 -> x + turnedPSize^.width
-        3 -> x - turnedCSize^.width
-        _ -> x + ((turnedPSize^.width - turnedCSize^.width) `div` 2)
+        1 -> (s'^.posx) + turnedPSize^.width
+        3 -> (s'^.posx) - turnedCSize^.width
+        _ -> (s'^.posx) + ((turnedPSize^.width - turnedCSize^.width) `div` 2)
     y' = case n of
-        0 -> y - turnedCSize^.height
-        2 -> y + turnedPSize^.height
-        _ -> y + ((turnedPSize^.height - turnedCSize^.height) `div` 2)
+        0 -> (s'^.posy) - turnedCSize^.height
+        2 -> (s'^.posy) + turnedPSize^.height
+        _ -> (s'^.posy) + ((turnedPSize^.height - turnedCSize^.height) `div` 2)
 
 -- カードサイズの向きによる正規化
 normalizeCardSize :: Int -> Size -> Size

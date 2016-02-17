@@ -38,7 +38,7 @@ update = do
                 nowplayer .= n
                 put =<< execStateT deckTohand =<< get
             nowplayer .= 0
-            put =<< execStateT updateField =<< get
+            modify updateField
             modify getCanPuts
             mode .= Choice
         Draw -> do
@@ -97,17 +97,21 @@ update = do
                         init <- use initiations
                         initiations .= (take now init) ++ [False] ++ (drop (now + 1) init)
                     unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
-                    handcards .= (take now hcards) ++ [(take nhk nowhcard) ++ (drop (nhk + 1) nowhcard)] ++ (drop (now + 1) hcards)
+                    put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                     hcards <- use handcards
                     deck <- use decks
                     embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
                     if length (deck!!now) == 0 && length (hcards!!now) == 0
                         then mode .= GameOver
-                        else mode .= Goto Draw
-                    modify nextplayer
-                    put =<< execStateT updateField =<< get
+                        else  do
+                            mode .= Goto Draw
+                            modify nextplayer
+                    modify updateField
+                    --showcanputs =<< get
+                    ff2 <- use field
+                    embedIO $ print ff2
         GameOver -> do
-            color red $ translate (V2 300 450) $ text font 48 "Game Over"
+            color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
         Goto goto -> do
             --embedIO $ print "g"
             mb <- mouseButtonL

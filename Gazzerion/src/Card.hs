@@ -16,7 +16,7 @@ fixedrand :: IO [Int]
 fixedrand = do
     let rands = replicateM 4 $ (getStdRandom $ randomR (-5,5) :: IO Int)
     r <- rands
-    let r2 = if null $ filter (> 0) r then fixedrand else rands
+    let r2 = if null $ filter (> 0) r then fixedrand else return r
     res <- r2
     return res
 

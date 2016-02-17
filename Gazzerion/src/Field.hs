@@ -110,28 +110,25 @@ refreshPassage2 ((Passage p), n) (States x y t) c f d = do
 refreshPassage2 (DeadEnd, _) _ _ _ _ = embedIO $ print "dead"
 
 -- おける場所のPassage ID
-getCanPuts :: StateT World (StateT World (StateT World Game)) ()
-getCanPuts = do
-    now <- use nowplayer
-    hcards <- use handcards
-    shc <- use selectedhandcard
-    fld <- use field
-    init <- use initiations
-    world <- get
-    let normalputs = \crd -> concat $ [getCanPutNoInit crd trn (mytree, 0) DeadEnd fld | mytree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
-        initputs = \crd -> if init!!now
-            then concat $ [getCanPutInit crd trn world | trn <- [0..length (crd^.connector)-1]]
-            else []
-    canputs .= [initputs crd ++ normalputs crd | crd <- (hcards!!now)]
+getCanPuts :: World -> World
+getCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (world^.handcards)!!(world^.nowplayer)]where
+    normalputs = \crd -> concat $ [getCanPutNoInit crd trn (tree, 0) DeadEnd (world^.field) | tree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
+    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer)
+        then concat $ [getCanPutInit crd trn world | trn <- [0..length (crd^.connector)-1]]
+        else []
 getCanPutNoInit :: ModCard -> Int -> (Tree, Int) -> Tree -> [Tree] -> [(Int, States)]
 getCanPutNoInit crd trn ((Fork c s t), _) _ f = foldl (++) [] $ map (\x -> getCanPutNoInit crd trn x (Fork c s t) f) $ zip t $ map (`mod` 4) [4-s^.turn..]
-getCanPutNoInit crd trn ((Passage p), n) (Fork c s t) f = if (parentCnctor < 0 || parentCnctor == (crd^.connector)!!((n + trn + 2) `mod` 4)) && not collisionDetection
+getCanPutNoInit crd trn ((Passage p), n) (Fork c s t) f = if (parentCnctor < 0 || parentCnctor == (crd^.connector)!!((n + trn + 2) `mod` 4)) && not collisionDetection && not cannotPutFlag
     then [(p, connected)]
     else [] where
+        --衝突判定
         parentCnctor = (c^.connector)!!((n + s^.turn) `mod` 4)
         tempCard = Fork crd (States 0 0 trn) []
         connected = connectedState tempCard n s c
         collisionDetection = True `elem` [collision connected (normalizeCardSize trn (crd^.size)) mytree | mytree <- f]
+        --フィールドオーバーチェック
+        cannotPutFlag = connected^.posx < 0 || connected^.posx + (normalizeCardSize trn (crd^.size))^.width > fieldSize^.width ||
+            connected^.posy < 0 || connected^.posy + (normalizeCardSize trn (crd^.size))^.height > fieldSize^.height
 getCanPutNoInit _ _ ((DeadEnd), _) _ _ = []
 getCanPutInit :: ModCard -> Int -> World -> [(Int, States)]
 getCanPutInit crd trn world = filter iscol allinitposes where
@@ -139,6 +136,7 @@ getCanPutInit crd trn world = filter iscol allinitposes where
     fsize = world^.fieldsize
     allinitposes = case (world^.nowplayer) `mod` 4 of
         0 -> [(-1, States x (fsize^.height - turned^.height) trn) | x <- [0..(fsize^.width - turned^.width)]]
+        1 -> [(-1, States x 0 trn) | x <- [0..(fsize^.width - turned^.width)]]
     iscol = \x -> not $  True `elem` [collision (snd x) turned mytree | mytree <- (world^.field)]
 
 -- 衝突判定

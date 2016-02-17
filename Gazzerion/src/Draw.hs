@@ -13,6 +13,8 @@ dtoi n = (truncate n) :: Int
 
 v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
 
+drawBox x y w h = polygon [v2Int x y, v2Int (x+w) y, v2Int (x+w) (y+h), v2Int x (y+h)]
+
 drawCard card env = do
     color gray $ polygon [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
     color black $ polygonOutline [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
@@ -20,7 +22,7 @@ drawCard card env = do
         wid = itod $ card^.size^.width * env^.grid
         hei = itod $ card^.size^.height * env^.grid
         len = length (card^.connector)
-        cGrid = 0.05 * (sqrt $ fromIntegral $ card^.size^.width * card^.size^.height * (2 ^ (env^.grid)))
+        cGrid =  sqrt $ fromIntegral $ (card^.size^.width * card^.size^.height * ((env^.grid) ^ 2)) `div` 16
         colors = [red, blue, black, green, yellow]
         conPos = [V2 ((wid - cGrid) * 0.5) 0, V2 (wid - cGrid) ((hei - cGrid) * 0.5), V2 ((wid - cGrid) * 0.5) (hei - cGrid), V2 0 ((hei - cGrid) * 0.5)]
 
@@ -104,11 +106,31 @@ drawPlayerCards = do
                     mywid = getCardsWidth i
                     myhei = (csize^.height + 2) * env^.grid
                     myhk = hcards!!i
-                color gray $ polygon [v2Int myx myy, v2Int (myx + mywid) myy, v2Int (myx + mywid) (myy + myhei), v2Int myx (myy + myhei)]
-                translate (v2Int (myx + env^.grid) (myy + env^.grid)) $ drawCardBack =<< get
+                color (if now == i then cyan else gray) $ drawBox myx myy mywid myhei--polygon [v2Int myx myy, v2Int (myx + mywid) myy, v2Int (myx + mywid) (myy + myhei), v2Int myx (myy + myhei)]
+                translate (v2Int (myx + env^.grid) (myy + env^.grid)) $ drawCardBack =<< get -- 山札
                 color white $
                  translate (v2Int (myx + env^.grid * (1 + csize^.width `div` 2)) (myy + env^.grid * (1 + csize^.height `div` 2)) - charhlf) $ text myfont charsize (deckstr i)
                 let fx x = myx + env^.grid * (2 + csize^.width * (1 + x)) -- x枚目の手札の左上x座標
+                    fy = myy + env^.grid    -- 手札の左上y座標
+                forM_ [0..length(myhk)-1] $ \x -> when (i == now && x /= nhk || i /= now) $ translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
+                let ptlst = [n | n <- [0..length(hcards!!i)-1], -- カーソルの位置取得
+                        (itod . fx) n <= mpos^._x && itod (env^.grid * (myhk!!n)^.size^.width + fx n) > mpos^._x && itod fy <= mpos^._y && itod (env^.grid * (myhk!!n)^.size^.height + fy) > mpos^._y]
+                    pt = if null ptlst then -1 else ptlst!!0
+                let wid = (myhk!!pt)^.size^.width * env^.grid
+                    hei = (myhk!!pt)^.size^.height * env^.grid
+                when (pt >= 0) $ color green $ translate (v2Int (fx pt) fy) $ polygonOutline [v2Int 0 0, v2Int wid 0, v2Int wid hei, v2Int 0 hei]-- 光らせる
+                return pt
+            1 -> do
+                let myx = (leftup i) + getmodwid (i `mod` 4) i
+                    myy = 0
+                    mywid = getCardsWidth i
+                    myhei = (csize^.height + 2) * env^.grid
+                    myhk = hcards!!i
+                color (if now == i then cyan else gray) $ drawBox myx myy mywid myhei
+                translate (v2Int (myx + mywid - env^.grid * (1 + csize^.width)) (myy + env^.grid)) $ drawCardBack =<< get -- 山札
+                color white $
+                 translate (v2Int (myx  + mywid - env^.grid * (1 + csize^.width `div` 2)) (myy + env^.grid * (1 + csize^.height `div` 2)) - charhlf) $ text myfont charsize (deckstr i)
+                let fx x = myx + mywid - env^.grid * (2 + csize^.width * (2 + x)) -- x枚目の手札の左上x座標
                     fy = myy + env^.grid    -- 手札の左上y座標
                 forM_ [0..length(myhk)-1] $ \x -> when (i == now && x /= nhk || i /= now) $ translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
                 let ptlst = [n | n <- [0..length(hcards!!i)-1], -- カーソルの位置取得

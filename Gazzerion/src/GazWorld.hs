@@ -6,7 +6,7 @@ import Field
 import Control.Lens
 import Control.Monad.State
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 640 480) 2 0 [15, 15] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] []
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [5,5] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] [] 0
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -47,11 +47,14 @@ updateField :: StateT World (StateT World Game) ()
 updateField = do
     msize <- use cardsizeMin
     fld <- use field
-    forM_ fld $ \f -> refreshTree2 f fld msize
+    --forM_ fld $ \f -> refreshTree2 f fld msize
     field .= refreshTree fld msize
-    embedIO $ print $ fld
-    put =<< execStateT getCanPuts =<< get
-    cpts <- use canputs
-    embedIO $ print $ cpts
-    fld3 <- use field
-    embedIO $ print $ fld3
+    --fld3 <- use field
+    --embedIO $ print $ fld3
+
+--全流れ
+fieldclear world = getCanPuts $ (world&field.~[])&initiations.~replicate (world^.maxplayer) True
+
+--次のプレイヤーへ
+nextplayer :: World -> World
+nextplayer world = world&nowplayer.~((1 + world^.nowplayer) `mod` world^.maxplayer)

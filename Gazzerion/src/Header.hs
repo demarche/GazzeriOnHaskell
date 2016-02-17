@@ -11,7 +11,7 @@ data Size = Size{_width:: Int, _height:: Int} deriving Show
 -- （将来的に）画像
 data ModCard = ModCard{ _connector :: [Int], _size :: Size, _image :: Int} deriving Show
 
-data Mode = Init | Choice | Move Bool | Scroll Double | Dist Double | Goto Mode
+data Mode = Init | Draw | Choice | Move Bool | GameOver | Goto Mode
 
 data Enviroment = Enviroment
     { _grid :: Int
@@ -40,6 +40,7 @@ data World = World
     , _nowturn :: Int
     , _canputs :: [[(Int, States)]]
     , _field :: [Tree]
+    , _checkmatedcounter :: Int
     }
 
 -- カードの状態 x y turn

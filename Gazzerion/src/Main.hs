@@ -15,6 +15,8 @@ fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
 
 speed = 1
 
+modtest world = do
+    return $ world&nowplayer.~0
 
 update :: StateT World Game ()
 update = do
@@ -24,6 +26,7 @@ update = do
     env <- use enviroment
     hcards <- use handcards
     now <- use nowplayer
+    maxp <- use maxplayer
     ph <- use mode
 
     fld <- use field
@@ -31,12 +34,36 @@ update = do
 
     case ph of
         Init -> do
-            put =<< execStateT deckTohand =<< get
+            forM_ [0..maxp-1] $ \n -> do
+                nowplayer .= n
+                put =<< execStateT deckTohand =<< get
+            nowplayer .= 0
             put =<< execStateT updateField =<< get
+            modify getCanPuts
+            mode .= Choice
+        Draw -> do
+            put =<< execStateT deckTohand =<< get
+            modify getCanPuts
+            cpts <- use canputs--表示
+            embedIO $ print $ cpts--表示
             nowturn .= 0
             selectedhandcard .= -1
-            mode .= Choice
+            if null $ concat cpts -- 詰み判定
+                then do
+                    ckmate <- use checkmatedcounter
+                    if ckmate >= maxp -- 全詰み
+                        then do
+                            checkmatedcounter .= 0
+                            modify fieldclear -- 全流れ
+                            modify getCanPuts -- 置ける場所計算しなおし
+                        else checkmatedcounter += 1
+                    nowplayer .= (now + 1) `mod` maxp
+                    mode .= Draw
+                else do
+                    checkmatedcounter .= 0
+                    mode .= Choice
         Choice -> do
+            --embedIO $ print "c"
             mb <- mouseButtonL
             when (selectedhk >= 0 && mb) $ mode .= Goto (Move False)
         Move f
@@ -45,9 +72,10 @@ update = do
                 when (selectedhk >= 0) $ mode .= Move True
                 when (selectedhk < 0) $ mode .= Choice
             | f -> do
+                --embedIO $ print "m"
                 nhk <- use selectedhandcard
-                let nowdeck = hcards!!now
-                    nowcard = nowdeck!!nhk
+                let nowhcard = hcards!!now
+                    nowcard = nowhcard!!nhk
                     conlen = length (nowcard^.connector)
                 mw <- mouseScroll
                 mb <- mouseButtonL
@@ -62,20 +90,28 @@ update = do
                     nowturn .= 0
                     mode .= Goto Choice
                 when (mb && nowpt `elem` map snd (cp!!nhk)) $ do
-                    let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0)
+                    let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
                     fld <- use field
                     when (psg == -1) $ do
                         field .= initiation nowcard nowpt fld
                         init <- use initiations
                         initiations .= (take now init) ++ [False] ++ (drop (now + 1) init)
                     unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
-                    handcards .= (take now hcards) ++ [(take nhk nowdeck) ++ (drop (nhk + 1) nowdeck)] ++ (drop (now + 1) hcards)
+                    handcards .= (take now hcards) ++ [(take nhk nowhcard) ++ (drop (nhk + 1) nowhcard)] ++ (drop (now + 1) hcards)
+                    hcards <- use handcards
+                    deck <- use decks
+                    embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
+                    if length (deck!!now) == 0 && length (hcards!!now) == 0
+                        then mode .= GameOver
+                        else mode .= Goto Draw
+                    modify nextplayer
                     put =<< execStateT updateField =<< get
-                    mode .= Goto Init
+        GameOver -> do
+            color red $ translate (V2 300 450) $ text font 48 "Game Over"
         Goto goto -> do
+            --embedIO $ print "g"
             mb <- mouseButtonL
             unless mb $ mode .= goto
-    color red $ translate (V2 24 120) $ text font 24 "Press ESC to exit"
   where
     p0 = V2 390 320
 
@@ -84,28 +120,16 @@ mainLoop s = do
   s' <- execStateT update s
   tick
   unlessM (keyDown KeyEscape) $ mainLoop s'
-{-
-main = do
-    rnd1 <- randCard
-    rnd2 <- randCard
-    rnd3 <- randCard
-    let tree = initiation rnd1 0
-        tree2 = insertCard 1 rnd2 1 tree
-        tree3 = insertCard 6 rnd3 1 tree2
-        tree4 = refreshTree tree3 [tree3] (Size 6 4)
 
-    print $ getCanPutPassageIDs rnd1 1 [tree4]
-    print tree4-}
-
-
-main = runGameDefault $ do
+main = runGame Windowed (Box (V2 0 0) (V2 1440 900)) $ do
     font <- loadFont "VL-PGothic-Regular.ttf"
     --cd <- evalStateT randCard ()
     newW <- execStateT initDecks =<< execStateT updateEnv =<< return (makeWorld font)
 
-    {-runMaybeT $ forever $ do
+    {-}forever $ do
       color red $ translate (V2 24 240) $ text font 24 "Press SPACE to start"
       tick
-      () <- whenM (keyDown KeySpace) mzero
+      whenM (keyDown KeySpace) $
       return ()-}
     mainLoop $ newW
+

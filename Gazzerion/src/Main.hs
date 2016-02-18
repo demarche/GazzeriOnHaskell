@@ -36,14 +36,16 @@ update = do
         Init -> do
             forM_ [0..maxp-1] $ \n -> do
                 nowplayer .= n
-                put =<< execStateT deckTohand =<< get
+                modify decktohand
             nowplayer .= 0
             modify updateField
-            modify getCanPuts
+            modify setCanPutsAndBurst
+            cpts <- use canputs--表示
+            embedIO $ print $ cpts--表示
             mode .= Choice
         Draw -> do
-            put =<< execStateT deckTohand =<< get
-            modify getCanPuts
+            modify decktohand
+            modify setCanPutsAndBurst
             cpts <- use canputs--表示
             embedIO $ print $ cpts--表示
             nowturn .= 0
@@ -55,15 +57,14 @@ update = do
                         then do
                             checkmatedcounter .= 0
                             modify fieldclear -- 全流れ
-                            modify getCanPuts -- 置ける場所計算しなおし
+                            modify setCanPutsAndBurst -- 置ける場所計算しなおし
                         else checkmatedcounter += 1
-                    nowplayer .= (now + 1) `mod` maxp
+                    modify nextplayer
                     mode .= Draw
                 else do
                     checkmatedcounter .= 0
                     mode .= Choice
         Choice -> do
-            --embedIO $ print "c"
             mb <- mouseButtonL
             when (selectedhk >= 0 && mb) $ mode .= Goto (Move False)
         Move f
@@ -72,7 +73,6 @@ update = do
                 when (selectedhk >= 0) $ mode .= Move True
                 when (selectedhk < 0) $ mode .= Choice
             | f -> do
-                --embedIO $ print "m"
                 nhk <- use selectedhandcard
                 let nowhcard = hcards!!now
                     nowcard = nowhcard!!nhk
@@ -82,7 +82,6 @@ update = do
                 nturn <- use nowturn
                 cp <- use canputs
                 nowpt <- drawMovingCard =<< get
-
                 when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
                 when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
                 when (mb && nhk == selectedhk) $ do
@@ -103,13 +102,15 @@ update = do
                     embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
                     if length (deck!!now) == 0 && length (hcards!!now) == 0
                         then mode .= GameOver
-                        else  do
-                            mode .= Goto Draw
-                            modify nextplayer
+                        else mode .= Goto Burst
                     modify updateField
-                    --showcanputs =<< get
                     ff2 <- use field
                     embedIO $ print ff2
+        Burst -> do
+            field <- use field
+            unless (isburst field) $ modify nextplayer
+            modify burst
+            mode .= Draw
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
         Goto goto -> do

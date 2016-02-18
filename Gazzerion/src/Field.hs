@@ -10,7 +10,7 @@ fieldSize = Size 18 24
 -- 木にCard yを追加
 --      x   : 追加される枝のPassage ID
 --      y   : 追加したいカード
---      s   : カードの状態
+--      s   : カードの回転
 --      ts  : 追加される木
 insertCard :: Int -> ModCard -> Int -> [Tree] -> [Tree]
 insertCard x y s ts = inserts x tree ts where
@@ -43,6 +43,9 @@ toTree x s trees ignores = Fork (Hub x s forks2)
         forks2 = [if (x^.connector)!!y == 0 then DeadEnd else forks!!y | y <- [0..len-1]]
 
 -- イニシエーション
+--      x   : 追加したいカード
+--      s   : カードの状態
+--      ts  : 追加される木
 initiation x s ts = (toTree x s ts []):ts
 
 -- フィールド更新
@@ -96,13 +99,7 @@ showcanput crd trn tree world = case tree of
             _ -> embedIO $ print ""
     _ -> embedIO $ print ""
 
--- おける場所のPassage ID
-getCanPuts :: World -> World
-getCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (world^.handcards)!!(world^.nowplayer)] where
-    normalputs = \crd -> concat $ [canput crd trn tree world | tree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
-    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer) -- イニシエーション可能の時だけイニシエーションラインの置ける場所をチェック
-        then concat $ [canputInit crd trn world | trn <- [0..length (crd^.connector)-1]]
-        else []
+-- worldから置ける場所を取得（イニシエーション以外）
 canput :: ModCard -> Int -> Tree -> World -> [(Int, States)]
 canput crd trn tree world = case tree of
     (Fork h) -> concat $ map putlist $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..] where
@@ -118,6 +115,7 @@ canput crd trn tree world = case tree of
                 cannotPutFlag = fieldover connected (crd^.size) (world^.fieldsize)
             _ -> []
     _ -> []
+-- worldから置ける場所を取得（イニシエーションのみ）
 canputInit :: ModCard -> Int -> World -> [(Int, States)]
 canputInit crd trn world = filter iscol allinitposes where
     turned = normalizeCardSize trn (crd^.size)
@@ -126,6 +124,12 @@ canputInit crd trn world = filter iscol allinitposes where
         0 -> [(-1, States x (fsize^.height - turned^.height) trn) | x <- [0..(fsize^.width - turned^.width)]]
         1 -> [(-1, States x 0 trn) | x <- [0..(fsize^.width - turned^.width)]]
     iscol = \x -> not $ isCollision (Hub crd (snd x) []) (world^.field)
+
+-- 木ごとのバースト数
+burstCounter tree = case tree of
+    (Fork h) -> fmap (+1) $ fmap sum $ sequence $ map burstCounter (h^.trees)
+    (Passage p) -> Nothing
+    DeadEnd -> Just 0
 
 -- フィールドオーバー判定
 fieldover :: States -> Size -> Size -> Bool

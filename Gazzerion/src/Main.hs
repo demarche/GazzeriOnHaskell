@@ -40,27 +40,18 @@ update = do
             nowplayer .= 0
             modify updateField
             modify setCanPutsAndBurst
-            cpts <- use canputs--表示
-            embedIO $ print $ cpts--表示
+            --cpts <- use canputs--表示
+            --embedIO $ print $ cpts--表示
             mode .= Choice
         Draw -> do
             modify decktohand
             modify setCanPutsAndBurst
             cpts <- use canputs--表示
-            embedIO $ print $ cpts--表示
+            --embedIO $ print $ cpts--表示
             nowturn .= 0
             selectedhandcard .= -1
             if null $ concat cpts -- 詰み判定
-                then do
-                    ckmate <- use checkmatedcounter
-                    if ckmate >= maxp -- 全詰み
-                        then do
-                            checkmatedcounter .= 0
-                            modify fieldclear -- 全流れ
-                            modify setCanPutsAndBurst -- 置ける場所計算しなおし
-                        else checkmatedcounter += 1
-                    modify nextplayer
-                    mode .= Draw
+                then mode .= Checkmate
                 else do
                     checkmatedcounter .= 0
                     mode .= Choice
@@ -81,9 +72,10 @@ update = do
                 mb <- mouseButtonL
                 nturn <- use nowturn
                 cp <- use canputs
-                nowpt <- drawMovingCard =<< get
                 when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
                 when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
+                drawCanput =<< get
+                nowpt <- drawMovingCard =<< get
                 when (mb && nhk == selectedhk) $ do
                     selectedhandcard .= -1
                     nowturn .= 0
@@ -99,22 +91,33 @@ update = do
                     put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                     hcards <- use handcards
                     deck <- use decks
-                    embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
+                    --embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
                     if length (deck!!now) == 0 && length (hcards!!now) == 0
                         then mode .= GameOver
                         else mode .= Goto Burst
                     modify updateField
-                    ff2 <- use field
-                    embedIO $ print ff2
+                    --ff2 <- use field
+                    --embedIO $ print ff2
+        Checkmate -> do
+            embedIO $ print $ (show (now +1)) ++ "P Checkmate"
+            ckmate <- use checkmatedcounter
+            if ckmate >= maxp -- 全詰み
+                then do
+                    embedIO $ print $ "All Checkmate"
+                    checkmatedcounter .= 0
+                    modify fieldclear -- 全流れ
+                    modify setCanPutsAndBurst -- 置ける場所計算しなおし
+                else checkmatedcounter += 1
+            modify nextplayer
+            mode .= Draw
         Burst -> do
             field <- use field
-            unless (isburst field) $ modify nextplayer
+            if not $ isburst field then modify nextplayer else embedIO $ print $ (show (now +1)) ++ "P Burst"
             modify burst
             mode .= Draw
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
         Goto goto -> do
-            --embedIO $ print "g"
             mb <- mouseButtonL
             unless mb $ mode .= goto
   where

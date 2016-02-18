@@ -14,7 +14,10 @@ dtoi n = (truncate n) :: Int
 v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
 
 drawBox x y w h = polygon [v2Int x y, v2Int (x+w) y, v2Int (x+w) (y+h), v2Int x (y+h)]
+drawBoxOutLine x y w h = polygonOutline [v2Int x y, v2Int (x+w) y, v2Int (x+w) (y+h), v2Int x (y+h)]
+cardScale card world = Size (card^.size^.width * world^.enviroment^.grid)  (card^.size^.height * world^.enviroment^.grid)
 
+-- カードを描画
 drawCard card env = do
     color gray $ polygon [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
     color black $ polygonOutline [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
@@ -26,12 +29,14 @@ drawCard card env = do
         colors = [red, blue, black, green, yellow]
         conPos = [V2 ((wid - cGrid) * 0.5) 0, V2 (wid - cGrid) ((hei - cGrid) * 0.5), V2 ((wid - cGrid) * 0.5) (hei - cGrid), V2 0 ((hei - cGrid) * 0.5)]
 
+-- カードの裏面を描画
 drawCardBack world = do
-    color black $ polygon [v2Int 0 0, v2Int wid 0, v2Int wid hei, v2Int 0 hei]
-    color white $ polygonOutline [v2Int 0 0, v2Int wid 0, v2Int wid hei, v2Int 0 hei]where
+    color black $ drawBox 0 0 wid hei
+    color white $ drawBoxOutLine 0 0 wid hei where
         wid = world^.cardsizeMax^.width * world^.enviroment^.grid
         hei = world^.cardsizeMax^.height * world^.enviroment^.grid
 
+-- 開店後のカードの座標を修正
 fixturn v2 t wid hei = V2 (fx (v2^._x)) (fy (v2^._y)) where
     fx | t == 3 = (+ (itod hei))
        | t == 2 = (+ (itod wid))
@@ -40,23 +45,31 @@ fixturn v2 t wid hei = V2 (fx (v2^._x)) (fy (v2^._y)) where
        | t == 2 = (+ (itod hei))
        | otherwise = (+0)
 
+-- フィールドに配置済みの座標
+translate' card st env y = (f . g) y  where
+    deg = itod $ 360 * st^.turn `div` length (card^.connector)
+    wid = card^.size^.width * env^.grid
+    hei = card^.size^.height * env^.grid
+    mx = st^.posx * env^.grid + env^.gridx
+    my = st^.posy * env^.grid + env^.gridy
+    f x = translate (fixturn (v2Int mx my) (st^.turn) wid hei) x
+    g x = rotateD deg x
+
+-- ギャザリオンの木を描画
 drawTree tree env = case tree of
     Fork h -> do
-        let deg = itod $ 360 * h^.states^.turn `div` length (h^.card^.connector)
-            wid = h^.card^.size^.width * env^.grid
-            hei = h^.card^.size^.height * env^.grid
-            mx = h^.states^.posx * env^.grid + env^.gridx
-            my = h^.states^.posy * env^.grid + env^.gridy
-        translate (fixturn (v2Int mx my) (h^.states^.turn) wid hei) $ rotateD deg $ drawCard (h^.card) env
+        translate' (h^.card) (h^.states) env $ drawCard (h^.card) env
         forM_ (h^.trees) $ \u -> drawTree u env
     _ -> line[V2 0 0, V2 0 0]
 
+-- グリッド線を描画
 drawGrid world = do
     let env = world^.enviroment
         fsize = world^.fieldsize
     forM_ [0..fsize^.width] $ \x -> color black $ line [v2Int (env^.gridx + env^.grid * x) (env^.gridy), v2Int (env^.gridx + env^.grid * x) (env^.gridy + env^.gridh)]
     forM_ [0..fsize^.height] $ \y -> color black $ line [v2Int (env^.gridx) (env^.gridy + env^.grid * y), v2Int (env^.gridx + env^.gridw) (env^.gridy + env^.grid * y)]
 
+-- 移動中のカードを描画
 drawMovingCard world = do
     mp <- mousePosition
     let nowcard = ((world^.handcards)!!(world^.nowplayer))!!(world^.selectedhandcard)
@@ -76,6 +89,14 @@ drawMovingCard world = do
             else movedpos
     translate fitted $ rotateD deg $ drawCard nowcard env
     return $ States (dtoi (fieldpt^._x)) (dtoi (fieldpt^._y)) (world^.nowturn)
+
+--置ける場所をハイライト
+drawCanput world = do
+    let nowhcardindex = world^.selectedhandcard
+        nowcard = (world^.handcards)!!(world^.nowplayer)!!nowhcardindex
+        scale = cardScale nowcard world
+    when (nowhcardindex >= 0) $ forM_ (filter (\t -> t^.turn == world^.nowturn) $ map snd $ (world^.canputs)!!nowhcardindex) $ \x -> color red $ translate' nowcard x (world^.enviroment) $ drawBox 0 0 (scale^.width) (scale^.height)
+
 
 drawPlayerCards :: StateT World (StateT World Game) Int
 drawPlayerCards = do

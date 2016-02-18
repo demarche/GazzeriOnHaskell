@@ -8,7 +8,7 @@ import Field
 import Control.Lens
 import Control.Monad.State
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [5,5] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] [] 0 2
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] [] 0 2
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置

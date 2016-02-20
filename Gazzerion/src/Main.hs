@@ -9,7 +9,6 @@ import Data.List
 import System.Random
 import Control.Monad (replicateM)
 import Control.Monad.State
-import Control.Monad.Trans.Maybe
 
 fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
 
@@ -84,9 +83,10 @@ update = do
                     let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
                     fld <- use field
                     when (psg == -1) $ do
-                        field .= initiation nowcard nowpt fld
+                        let newtree = initiation nowcard nowpt fld
+                        field .= newtree
                         init <- use initiations
-                        initiations .= (take now init) ++ [False] ++ (drop (now + 1) init)
+                        initiations .= (take now init) ++ [Just (hashtree $ head newtree)] ++ (drop (now + 1) init)
                     unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
                     put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                     hcards <- use handcards
@@ -99,7 +99,6 @@ update = do
                     --ff2 <- use field
                     --embedIO $ print ff2
         Checkmate -> do
-            embedIO $ print $ (show (now +1)) ++ "P Checkmate"
             ckmate <- use checkmatedcounter
             if ckmate >= maxp -- 全詰み
                 then do
@@ -107,8 +106,10 @@ update = do
                     checkmatedcounter .= 0
                     modify fieldclear -- 全流れ
                     modify setCanPutsAndBurst -- 置ける場所計算しなおし
-                else checkmatedcounter += 1
-            modify nextplayer
+                else do
+                    embedIO $ print $ (show (now +1)) ++ "P Checkmate"
+                    checkmatedcounter += 1
+                    modify nextplayer
             mode .= Draw
         Burst -> do
             field <- use field

@@ -35,7 +35,7 @@ data World = World
     , _decks :: [[ModCard]]
     , _handcards :: [[ModCard]]
     , _magics :: [[ModCard]]
-    , _initiations :: [Bool]
+    , _initiations :: [Maybe Int]
     , _selectedhandcard :: Int
     , _nowturn :: Int
     , _canputs :: [[(Int, States)]]

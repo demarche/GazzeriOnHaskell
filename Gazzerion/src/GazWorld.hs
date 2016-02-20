@@ -8,7 +8,7 @@ import Field
 import Control.Lens
 import Control.Monad.State
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [True, True] (-1) 0 [] [] 0 2
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) 0 [] [] 0 2
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -42,7 +42,10 @@ decktohand world = (world&decks.~newdecks)&handcards.~newhcards where
 
 -- バースト
 burst :: World -> World
-burst world = world&field.~concat [if burstCounter t  == Nothing then [t] else [] | t <- world^.field]
+burst world = let hashes = map (\y -> Just $ hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
+                  newfield = filter (\x ->  burstCounter x == Nothing) (world^.field)
+                  newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
+    in (world&field.~newfield)&initiations.~newinit
 
 -- バーストフラグ
 isburst field = or [burstCounter t /= Nothing | t <- field]
@@ -57,7 +60,7 @@ setCanPutsAndBurst world = includeBurst where
 setCanPuts :: World -> World
 setCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (world^.handcards)!!(world^.nowplayer)] where
     normalputs = \crd -> concat $ [canput crd trn tree world | tree <- (world^.field), trn <- [0..length (crd^.connector)-1]] -- イニシエーション以外のおける場所
-    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer) -- イニシエーション可能の時だけイニシエーションラインの置ける場所をチェック
+    initputs = \crd -> if (world^.initiations)!!(world^.nowplayer) == Nothing -- イニシエーション可能の時だけイニシエーションラインの置ける場所をチェック
         then concat $ [canputInit crd trn world | trn <- [0..length (crd^.connector)-1]]
         else []
 
@@ -70,7 +73,7 @@ unsetCantPutsByLowBurst world = world&canputs.~[filter (`ishighburst` (nofhcard 
         else insertCard p card (st^.turn) (world^.field)
 
 --全流れ
-fieldclear world = setCanPutsAndBurst $ (world&field.~[])&initiations.~replicate (world^.maxplayer) True
+fieldclear world = setCanPutsAndBurst $ (world&field.~[])&initiations.~replicate (world^.maxplayer) Nothing
 
 --次のプレイヤーへ
 nextplayer :: World -> World

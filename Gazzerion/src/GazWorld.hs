@@ -32,22 +32,25 @@ initDecks = do
 
 -- デッキからドロー
 decktohand :: World -> World
-decktohand world = (world&decks.~newdecks)&handcards.~newhcards where
-    now = world^.nowplayer
-    dks = world^.decks
-    hcards = world^.handcards
-    drawnum = (world^.maxhandcards)!!now - length (hcards!!now) -- ドローする枚数
-    newdecks = (take now dks) ++ [drop drawnum (dks!!now)] ++ (drop (now+1) dks)
-    newhcards = (take now hcards) ++ [(hcards!!now) ++ (take drawnum (dks!!now))] ++ (drop (now+1) hcards)
+decktohand world =
+    let now = world^.nowplayer
+        dks = world^.decks
+        hcards = world^.handcards
+        drawnum = (world^.maxhandcards)!!now - length (hcards!!now) -- ドローする枚数
+        newdecks = (take now dks) ++ [drop drawnum (dks!!now)] ++ (drop (now+1) dks)
+        newhcards = (take now hcards) ++ [(hcards!!now) ++ (take drawnum (dks!!now))] ++ (drop (now+1) hcards)
+    in (world&decks.~newdecks)&handcards.~newhcards
 
 -- バースト
 burst :: World -> World
-burst world = let hashes = map (\y -> Just $ hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
-                  newfield = filter (\x ->  burstCounter x == Nothing) (world^.field)
-                  newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
+burst world =
+    let hashes = map (\y -> Just $ hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
+        newfield = filter (\x ->  burstCounter x == Nothing) (world^.field)
+        newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
     in (world&field.~newfield)&initiations.~newinit
 
 -- バーストフラグ
+isburst :: [Tree] -> Bool
 isburst field = or [burstCounter t /= Nothing | t <- field]
 
 -- 手札の置ける場所をセット（低バースト考慮）

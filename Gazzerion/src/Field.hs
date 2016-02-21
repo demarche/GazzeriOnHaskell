@@ -20,7 +20,7 @@ inserts :: Int -> Tree -> [Tree] -> [Tree]
 inserts x y ts = map (\t -> insert x y t) ts
 insert x y (Fork h) = Fork $ h&trees.~map (insert x y) (h^.trees)
 insert x y (Passage p) = if x == p then y else Passage p
-insert _ _ DeadEnd = DeadEnd
+insert _ _ t = t
 
 -- 未使用PassageIDを木から探索
 unusedPassage :: [Tree] -> [Int]
@@ -28,7 +28,7 @@ unusedPassage t = [x | x <-[0..], not (x `elem` usedPassages t)]
 usedPassages ts = concat $ map usedPassage ts
 usedPassage (Fork h) = concat $ map usedPassage (h^.trees)
 usedPassage (Passage p) = [p]
-usedPassage DeadEnd = []
+usedPassage _ = []
 
 -- Card xをTreeに変換
 toTree :: ModCard -> States -> [Tree] -> [Int] -> Tree
@@ -39,9 +39,9 @@ toTree x s trees ignores = Fork (Hub x s forks2)
         len = length $ x^.connector -- コネクタの数
         moduloID z = filter (\y -> y `mod` len==(z+len-(s^.turn)) `mod` len) un -- コネクタの数を法とするxと等しい未使用パッセージの無限リスト
         ids = [(moduloID y)!!0 | y<-[0..len-1]]
-        forks = [if (y `mod` len) `elem` map (`mod` len) ignores then DeadEnd else Passage y | y <-ids]
-        --connector:0 をDeadEnd化
-        forks2 = [if (x^.connector)!!y == 0 then DeadEnd else forks!!y | y <- [0..len-1]]
+        forks = [if (y `mod` len) `elem` map (`mod` len) ignores then NotConnect else Passage y | y <-ids]
+        --connector:0 をNotConnect化
+        forks2 = [if (x^.connector)!!y == 0 then NotConnect else forks!!y | y <- [0..len-1]]
 
 -- イニシエーション
 --      x   : 追加したいカード
@@ -49,12 +49,6 @@ toTree x s trees ignores = Fork (Hub x s forks2)
 --      ts  : 追加される木
 initiation x s ts = (toTree x s ts []):ts
 
--- フィールド更新
-updateField :: World -> World
-updateField world =
-    let f1 = map propCoordinate (world^.field)
-        f' = [appDeadend t1 (world^.cardsizeMin) (world^.fieldsize) f1 | t1 <- f1]
-    in world&field.~f'
 -- 座標伝搬
 --      tree    : 更新対象の木
 --      n       : 親からみた自分の位置
@@ -143,7 +137,7 @@ burstCounter tree =
     case tree of
         (Fork h) -> fmap (+1) $ fmap sum $ sequence $ map burstCounter (h^.trees)
         (Passage p) -> Nothing
-        DeadEnd -> Just 0
+        _ -> Just 0
 
 -- フィールドオーバー判定
 fieldover :: States -> Size -> Size -> Bool
@@ -198,3 +192,16 @@ hashlist (x:xs) =
     in if null xs
         then hash fnv_offset_basis
         else hash $ hashlist xs
+
+-- DeadEndを元に戻す
+unDeadEnd :: [Tree] -> [Tree]
+unDeadEnd field = map (\t -> unDeadEndTree t field) field
+unDeadEndTree tree field = case tree of
+    (Fork h) ->  Fork (h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+        app (child, n) = case child of
+            DeadEnd -> Passage ((moduloID n)!!0) where
+                un = (unusedPassage field)
+                len = length $ h^.card^.connector -- コネクタの数
+                moduloID z = filter (\y -> y `mod` len==(z+len-(h^.states^.turn)) `mod` len) un -- コネクタの数を法とするxと等しい未使用パッセージの無限リスト
+            _ -> unDeadEndTree child field
+    _ -> tree

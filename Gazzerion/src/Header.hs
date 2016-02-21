@@ -59,7 +59,7 @@ data Hub = Hub{ _card :: ModCard, _states :: States, _trees :: [Tree]} deriving 
 --      ModCard : カード
 --      State   : 座標・回転
 --      [Tree]  : 次の木
-data Tree = DeadEnd | Passage Int | Fork Hub deriving Show
+data Tree = DeadEnd | NotConnect | Passage Int | Fork Hub deriving Show
 
 makeLenses ''Hub
 makeLenses ''States

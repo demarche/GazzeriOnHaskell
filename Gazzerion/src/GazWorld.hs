@@ -35,6 +35,13 @@ updateEnv = do
             1 -> (v2Int (ss^.width - (ss^.width - synthesisWidth n) `div` 2 - n `div` 4 * getCardsWidth n) synthesisHeight, v2Int (getCardsWidth n) synthesisHeight)
     enviroment .= Enviroment mygrid gridX gridY gridWid gridHei [playerstartPosition n | n <- [0..maxp-1]]
 
+-- フィールド更新
+updateField :: World -> World
+updateField world =
+    let f1 = map propCoordinate (world^.field)
+        f' = [appDeadend t1 (world^.cardsizeMin) (world^.fieldsize) f1 | t1 <- f1]
+    in world&field.~f'
+
 -- ランダムデッキ作成
 initDecks :: StateT World Game ()
 initDecks = do
@@ -58,9 +65,10 @@ decktohand world =
 burst :: World -> World
 burst world =
     let hashes = map (\y -> Just $ hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
-        newfield = filter (\x ->  burstCounter x == Nothing) (world^.field)
+        bursted = filter (\x ->  burstCounter x == Nothing) (world^.field)
+        newfield = unDeadEnd bursted
         newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
-    in (world&field.~newfield)&initiations.~newinit
+    in updateField $ (world&field.~newfield)&initiations.~newinit
 
 -- 手札の置ける場所をセット（低バースト考慮）
 setCanPutsAndBurst :: World -> World

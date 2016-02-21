@@ -130,6 +130,14 @@ canputInit crd trn world =
         iscol = \x -> not $ isCollision (Hub crd (snd x) []) (world^.field)
     in filter iscol allinitposes
 
+-- バーストフラグ
+isburst :: [Tree] -> Bool
+isburst field = or [burstCounter t /= Nothing | t <- field]
+
+-- バーストする木
+burstfilter :: [Tree] -> [Tree]
+burstfilter field = filter (\t -> burstCounter t /= Nothing ) field
+
 -- 木ごとのバースト数
 burstCounter tree =
     case tree of

@@ -11,14 +11,15 @@ data Size = Size{_width:: Int, _height:: Int} deriving Show
 -- （将来的に）画像
 data ModCard = ModCard{ _connector :: [Int], _size :: Size, _image :: Int} deriving Show
 
-data Mode = Init | Draw | Choice | Move Bool | Checkmate | Burst | GameOver | Goto Mode
+data Mode = Init | Draw | Choice | Move Bool | Mate Int String | Burst Int [Tree] | GameOver | Goto Mode
 
 data Enviroment = Enviroment
     { _grid :: Int
     , _gridx :: Int
     , _gridy :: Int
     , _gridw :: Int
-    , _gridh :: Int}
+    , _gridh :: Int
+    , _basestart :: [(V2 Double, V2 Double)]}
 data World = World
     {_mode :: Mode
     , _cardsizeMax :: Size

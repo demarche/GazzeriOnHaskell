@@ -4,32 +4,24 @@ import Draw
 import GazWorld
 import Header
 import FreeGame
-import Control.Lens
 import Data.List
 import System.Random
+import Control.Lens
 import Control.Monad (replicateM)
 import Control.Monad.State
-
-fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
-
-speed = 1
-
-modtest world = do
-    return $ world&nowplayer.~0
-
 update :: StateT World Game ()
 update = do
     drawGrid =<< get
-    selectedhk <-evalStateT drawPlayerCards =<< get
+    drawbasement =<< get
+    focusCardIndex <- drawhandcard =<< get
+    maxp <- use maxplayer
     font <- use font
-    env <- use enviroment
     hcards <- use handcards
     now <- use nowplayer
-    maxp <- use maxplayer
     ph <- use mode
 
     fld <- use field
-    forM_ fld $ \f -> drawTree f env
+    forM_ fld $ \f -> (f `drawTree`) =<< use enviroment
 
     case ph of
         Init -> do
@@ -50,36 +42,35 @@ update = do
             nowturn .= 0
             selectedhandcard .= -1
             if null $ concat cpts -- 詰み判定
-                then mode .= Checkmate
+                then mode .= Mate 0 ""
                 else do
                     checkmatedcounter .= 0
                     mode .= Choice
         Choice -> do
             mb <- mouseButtonL
-            when (selectedhk >= 0 && mb) $ mode .= Goto (Move False)
-        Move f
-            | not f -> do
-                selectedhandcard .= selectedhk
-                when (selectedhk >= 0) $ mode .= Move True
-                when (selectedhk < 0) $ mode .= Choice
-            | f -> do
+            when (mb && focusCardIndex /= Nothing) $ do
+                mode .= Move False
+                let takejust (Just n) = n
+                selectedhandcard .= takejust focusCardIndex
+        Move f -> do
+                mw <- mouseScroll
+                mb <- mouseButtonL
+                when (not f && not mb) $ mode .= Move True
                 nhk <- use selectedhandcard
                 let nowhcard = hcards!!now
                     nowcard = nowhcard!!nhk
                     conlen = length (nowcard^.connector)
-                mw <- mouseScroll
-                mb <- mouseButtonL
                 nturn <- use nowturn
                 cp <- use canputs
                 when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
                 when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
                 drawCanput =<< get
                 nowpt <- drawMovingCard =<< get
-                when (mb && nhk == selectedhk) $ do
+                when (mb && f && (Just nhk) == focusCardIndex) $ do
                     selectedhandcard .= -1
                     nowturn .= 0
                     mode .= Goto Choice
-                when (mb && nowpt `elem` map snd (cp!!nhk)) $ do
+                when (mb && f && nowpt `elem` map snd (cp!!nhk)) $ do
                     let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
                     fld <- use field
                     when (psg == -1) $ do
@@ -91,38 +82,50 @@ update = do
                     put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                     hcards <- use handcards
                     deck <- use decks
-                    --embedIO $ print $ (show $ length $ deck!!now) ++ "," ++ (show $ length (hcards!!now))
                     if length (deck!!now) == 0 && length (hcards!!now) == 0
                         then mode .= GameOver
-                        else mode .= Goto Burst
+                        else mode .= Burst 0 []
                     modify updateField
                     --ff2 <- use field
                     --embedIO $ print ff2
-        Checkmate -> do
-            ckmate <- use checkmatedcounter
-            if ckmate >= maxp -- 全詰み
-                then do
-                    embedIO $ print $ "All Checkmate"
-                    checkmatedcounter .= 0
-                    modify fieldclear -- 全流れ
-                    modify setCanPutsAndBurst -- 置ける場所計算しなおし
-                else do
-                    embedIO $ print $ (show (now +1)) ++ "P Checkmate"
-                    checkmatedcounter += 1
-                    modify nextplayer
-            mode .= Draw
-        Burst -> do
-            field <- use field
-            if not $ isburst field then modify nextplayer else embedIO $ print $ (show (now +1)) ++ "P Burst"
-            modify burst
-            mode .= Draw
+        Mate count str
+            | count == 0 -> do
+                ckmate <- use checkmatedcounter
+                if ckmate >= maxp -- 全詰み
+                    then do
+                        mode .= Mate 1 "All Checkmate"
+                        checkmatedcounter .= 0
+                        modify fieldclear -- 全流れ
+                        modify setCanPutsAndBurst -- 置ける場所計算しなおし
+                    else do
+                        mode .= Mate 1 ((show (now +1)) ++ "P Checkmate")
+                        checkmatedcounter += 1
+            | count > 50 -> do
+                modify nextplayer
+                mode .= Draw
+            | otherwise -> do
+                (\w -> drawnotice w str blue count) =<< get
+                mode .= Mate (count + 1) str
+        Burst count bursttree
+            | count == 0 -> do
+                field <- use field
+                if isburst field
+                    then mode .= Burst 1 (burstfilter field)
+                    else do
+                        modify nextplayer
+                        mode .= Draw
+                modify burst
+            | count > 50 -> mode .= Draw
+            | otherwise -> do
+                env <- use enviroment
+                forM_ bursttree $ \t -> color red $ drawBurstTree t env count
+                (\w -> drawnotice w ((show (now + 1)) ++ "P Burst") red count) =<< get
+                mode .= Burst (count + 1) bursttree
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
         Goto goto -> do
             mb <- mouseButtonL
             unless mb $ mode .= goto
-  where
-    p0 = V2 390 320
 
 mainLoop :: World -> Game ()
 mainLoop s = do

@@ -2,13 +2,14 @@ module GazWorld where
 import Control.Applicative
 import Data.Maybe
 import Card
+import Draw
 import Header
 import FreeGame
 import Field
 import Control.Lens
 import Control.Monad.State
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) 0 [] [] 0 2
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) 0 [] [] 0 2
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -17,10 +18,22 @@ updateEnv = do
     fs <- use fieldsize
     cs <- use cardsizeMax
     ss <- use screensize
-    let mygrid = ss^.height `div` (fs^.height + cs^.height * 2 + 4)
-        gridY = mygrid * (cs^.height + 2)
-        gridX = (ss^.width - mygrid * fs^.width) `div` 2
-    enviroment .= Enviroment mygrid gridX gridY (mygrid * fs^.width) (mygrid * fs^.height)
+    env <- use enviroment
+    maxh <- use maxhandcards
+    maxm <- use maxmagiccards
+    maxp <- use maxplayer
+    let mygrid = ss^.height `div` (fs^.height + cs^.height * 2 + 4) -- グリッドサイズ
+        gridY = mygrid * (cs^.height + 2) -- グリッド描画開始位置X
+        gridX = (ss^.width - mygrid * fs^.width) `div` 2 -- グリッド描画開始位置Y
+        gridWid = (mygrid * fs^.width)
+        gridHei = (mygrid * fs^.height)
+        getCardsWidth n = mygrid * (cs^.width * (maxh!!n + maxm!!n) + 4) -- n番目のプレイヤーのカードの総width
+        synthesisWidth x = sum [getCardsWidth i | i <- [0..maxp-1], i `mod` 4 == x] -- n番テーブルの総width
+        synthesisHeight = mygrid * (2 + cs^.height)
+        playerstartPosition n = case n `mod` 4 of
+            0 -> (v2Int ((ss^.width - synthesisWidth n) `div` 2 + n `div` 4 * getCardsWidth n) (gridY + gridHei), v2Int (getCardsWidth n) synthesisHeight)
+            1 -> (v2Int (ss^.width - (ss^.width - synthesisWidth n) `div` 2 - n `div` 4 * getCardsWidth n) synthesisHeight, v2Int (getCardsWidth n) synthesisHeight)
+    enviroment .= Enviroment mygrid gridX gridY gridWid gridHei [playerstartPosition n | n <- [0..maxp-1]]
 
 -- ランダムデッキ作成
 initDecks :: StateT World Game ()
@@ -49,10 +62,6 @@ burst world =
         newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
     in (world&field.~newfield)&initiations.~newinit
 
--- バーストフラグ
-isburst :: [Tree] -> Bool
-isburst field = or [burstCounter t /= Nothing | t <- field]
-
 -- 手札の置ける場所をセット（低バースト考慮）
 setCanPutsAndBurst :: World -> World
 setCanPutsAndBurst world = includeBurst where
@@ -75,17 +84,18 @@ unsetCantPutsByLowBurst world = world&canputs.~[filter (`ishighburst` (nofhcard 
         then initiation card st (world^.field)
         else insertCard p card (st^.turn) (world^.field)
 
---全流れ
+-- 全流れ
+fieldclear :: World -> World
 fieldclear world = setCanPutsAndBurst $ (world&field.~[])&initiations.~replicate (world^.maxplayer) Nothing
 
---次のプレイヤーへ
+-- 次のプレイヤーへ
 nextplayer :: World -> World
 nextplayer world = world&nowplayer.~((1 + world^.nowplayer) `mod` world^.maxplayer)
 
---現在のプレイヤーのn番目のカード
+-- 現在のプレイヤーのn番目のカード
 nofhcard world n = (world^.handcards)!!(world^.nowplayer)!!n
 
---手札からn枚目のカードをドリップ
+-- 手札からn枚目のカードをドリップ
 dripHandcard :: Int -> StateT World (StateT World Game) ModCard
 dripHandcard n = do
     now <- use nowplayer

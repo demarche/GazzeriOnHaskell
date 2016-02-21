@@ -5,9 +5,14 @@ import Field
 import FreeGame
 import Control.Lens
 import Control.Monad.State
+import FreeGame.Data.Font
+import FreeGame.Class
+import Data.Maybe
 
 itod :: Int -> Double
 itod n = (fromIntegral n) :: Double
+itof :: Int -> Float
+itof n = (fromIntegral n) :: Float
 dtoi :: Double -> Int
 dtoi n = (truncate n) :: Int
 
@@ -15,7 +20,7 @@ v2Int x y = V2 ((fromIntegral x) :: Double) ((fromIntegral y) :: Double)
 
 drawBox x y w h = polygon [v2Int x y, v2Int (x+w) y, v2Int (x+w) (y+h), v2Int x (y+h)]
 drawBoxOutLine x y w h = polygonOutline [v2Int x y, v2Int (x+w) y, v2Int (x+w) (y+h), v2Int x (y+h)]
-cardScale card world = Size (card^.size^.width * world^.enviroment^.grid)  (card^.size^.height * world^.enviroment^.grid)
+cardScale csize world = Size (csize^.width * world^.enviroment^.grid)  (csize^.height * world^.enviroment^.grid)
 
 -- カードを描画
 drawCard card env = do
@@ -36,7 +41,7 @@ drawCardBack world = do
         wid = world^.cardsizeMax^.width * world^.enviroment^.grid
         hei = world^.cardsizeMax^.height * world^.enviroment^.grid
 
--- 開店後のカードの座標を修正
+-- 回転後のカードの座標を修正
 fixturn v2 t wid hei = V2 (fx (v2^._x)) (fy (v2^._y)) where
     fx | t == 3 = (+ (itod hei))
        | t == 2 = (+ (itod wid))
@@ -75,12 +80,11 @@ drawMovingCard world = do
     let nowcard = ((world^.handcards)!!(world^.nowplayer))!!(world^.selectedhandcard)
         env = world^.enviroment
         fsize = world^.fieldsize
-        cardscale = v2Int (world^.enviroment^.grid * nowcard^.size^.width) (world^.enviroment^.grid * nowcard^.size^.height)
-        cardpos = if even (world^.nowturn) then mp - 0.5 * cardscale else mp - 0.5 * (V2 (cardscale^._y) (cardscale^._x))
+        Size wid hei = cardScale (nowcard^.size) world
+        v2cardscale = v2Int wid hei
+        cardpos = if even (world^.nowturn) then mp - 0.5 * v2cardscale else mp - 0.5 * (V2 (v2cardscale^._y) (v2cardscale^._x))
         fix_size = if even (world^.nowturn) then Size (nowcard^.size^.width-1) (nowcard^.size^.height-1) else Size (nowcard^.size^.height-1) (nowcard^.size^.width-1)
         deg = itod $ 360 * (world^.nowturn) `div` length (nowcard^.connector)
-        wid = nowcard^.size^.width * env^.grid
-        hei = nowcard^.size^.height * env^.grid
         movedpos = fixturn cardpos (world^.nowturn) wid hei -- 調整後の座標
         x = dtoi (cardpos^._x) -  env^.gridx;y = dtoi (cardpos^._y) - env^.gridy
         fieldpt = v2Int (x `div` env^.grid) (y `div` env^.grid)
@@ -90,76 +94,78 @@ drawMovingCard world = do
     translate fitted $ rotateD deg $ drawCard nowcard env
     return $ States (dtoi (fieldpt^._x)) (dtoi (fieldpt^._y)) (world^.nowturn)
 
---置ける場所をハイライト
+-- 置ける場所をハイライト
 drawCanput world = do
     let nowhcardindex = world^.selectedhandcard
         nowcard = (world^.handcards)!!(world^.nowplayer)!!nowhcardindex
-        scale = cardScale nowcard world
-    when (nowhcardindex >= 0) $ forM_ (filter (\t -> t^.turn == world^.nowturn) $ map snd $ (world^.canputs)!!nowhcardindex) $ \x -> color red $ translate' nowcard x (world^.enviroment) $ drawBox 0 0 (scale^.width) (scale^.height)
+        scale = cardScale (nowcard^.size) world
+    when (nowhcardindex >= 0) $
+        forM_ (filter (\t -> t^.turn == world^.nowturn) $ map snd $ (world^.canputs)!!nowhcardindex) $ \x -> color red $ translate' nowcard x (world^.enviroment) $ drawBox 0 0 (scale^.width) (scale^.height)
 
+-- カードの土台表示
+drawbasement world = do
+    let env = world^.enviroment
+        maxp = world^.maxplayer
+        csize = cardScale (world^.cardsizeMax) world
+    forM_ [0..maxp-1] $ \n ->
+        let start = fst $ (env^.basestart)!!n
+            size = snd $ (env^.basestart)!!n
+            deg = case n of 0 -> 0; 1 -> 180
+            decksize = length $ (world^.decks)!!n
+            fnt = world^.font
+            fontsize = sqrt (fromIntegral ( csize^.width * csize^.height `div` 16)) :: Double
+            sizefix = dtoi $ fontsize * (metricsAscent fnt - metricsDescent fnt) * 0.5
+            drawbase = do
+                color (if world^.nowplayer == n then cyan else gray) $ polygon [V2 0 0, V2 (size^._x) 0, size, V2 0 (size^._y)]
+                translate (v2Int (env^.grid) (env^.grid)) $ drawCardBack world
+                translate (v2Int (env^.grid + csize^.width `div` 2 - sizefix) (env^.grid + csize^.height `div` 2 )) $ text fnt fontsize (show decksize)
+        in translate start $ rotateD deg $ drawbase
 
-drawPlayerCards :: StateT World (StateT World Game) Int
-drawPlayerCards = do
-    csize <- use cardsizeMax
-    maxh <- use maxhandcards
-    maxm <- use maxmagiccards
-    maxp <- use maxplayer
-    ssize <- use screensize
-    env <- use enviroment
-    deckis <- use decks
-    hcards <- use handcards
-    myfont <- use font
-    now <- use nowplayer
-    nhk <- use selectedhandcard
+-- 手札表示
+drawhandcard world = do
     mpos <- mousePosition
-    let charsize :: Double
-        charsize = sqrt $ fromIntegral (2 * csize^.width * csize^.height * env^.grid)
-        charhlf =  V2 (charsize * 0.3) (charsize * (-0.2))
-        getCardsWidth n = env^.grid * (csize^.width * (maxh!!n + maxm!!n) + 4) -- n番目のプレイヤーのカードの総width
-        getmodwid x n = foldl (+) 0 [getCardsWidth i | i <- [0..n-1], i `mod` 4 == x] -- n番目までのx (mod 4) 番テーブルのプレイヤーの横幅の合計
-        leftup x = (ssize^.width - getmodwid (x `mod` 4) maxp) `div` 2 -- x番目のプレイヤーの左上X座標
-        deckstr n = show $ length $ deckis!!n -- n番目のプレイヤーのデッキ枚数残り
-    ret <- forM [0..maximum [3, maxp-1]] $ \i ->
-        case i `mod` 4 of
-            0 -> do
-                let myx = (leftup i) + getmodwid (i `mod` 4) i
-                    myy = env^.gridy + env^.gridh
-                    mywid = getCardsWidth i
-                    myhei = (csize^.height + 2) * env^.grid
-                    myhk = hcards!!i
-                color (if now == i then cyan else gray) $ drawBox myx myy mywid myhei--polygon [v2Int myx myy, v2Int (myx + mywid) myy, v2Int (myx + mywid) (myy + myhei), v2Int myx (myy + myhei)]
-                translate (v2Int (myx + env^.grid) (myy + env^.grid)) $ drawCardBack =<< get -- 山札
-                color white $
-                 translate (v2Int (myx + env^.grid * (1 + csize^.width `div` 2)) (myy + env^.grid * (1 + csize^.height `div` 2)) - charhlf) $ text myfont charsize (deckstr i)
-                let fx x = myx + env^.grid * (2 + csize^.width * (1 + x)) -- x枚目の手札の左上x座標
-                    fy = myy + env^.grid    -- 手札の左上y座標
-                forM_ [0..length(myhk)-1] $ \x -> when (i == now && x /= nhk || i /= now) $ translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
-                let ptlst = [n | n <- [0..length(hcards!!i)-1], -- カーソルの位置取得
-                        (itod . fx) n <= mpos^._x && itod (env^.grid * (myhk!!n)^.size^.width + fx n) > mpos^._x && itod fy <= mpos^._y && itod (env^.grid * (myhk!!n)^.size^.height + fy) > mpos^._y]
-                    pt = if null ptlst then -1 else ptlst!!0
-                let wid = (myhk!!pt)^.size^.width * env^.grid
-                    hei = (myhk!!pt)^.size^.height * env^.grid
-                when (pt >= 0) $ color green $ translate (v2Int (fx pt) fy) $ polygonOutline [v2Int 0 0, v2Int wid 0, v2Int wid hei, v2Int 0 hei]-- 光らせる
-                return pt
-            1 -> do
-                let myx = (leftup i) + getmodwid (i `mod` 4) i
-                    myy = 0
-                    mywid = getCardsWidth i
-                    myhei = (csize^.height + 2) * env^.grid
-                    myhk = hcards!!i
-                color (if now == i then cyan else gray) $ drawBox myx myy mywid myhei
-                translate (v2Int (myx + mywid - env^.grid * (1 + csize^.width)) (myy + env^.grid)) $ drawCardBack =<< get -- 山札
-                color white $
-                 translate (v2Int (myx  + mywid - env^.grid * (1 + csize^.width `div` 2)) (myy + env^.grid * (1 + csize^.height `div` 2)) - charhlf) $ text myfont charsize (deckstr i)
-                let fx x = myx + mywid - env^.grid * (2 + csize^.width * (2 + x)) -- x枚目の手札の左上x座標
-                    fy = myy + env^.grid    -- 手札の左上y座標
-                forM_ [0..length(myhk)-1] $ \x -> when (i == now && x /= nhk || i /= now) $ translate (v2Int (fx x) fy) $ drawCard (myhk!!x) env -- 手札描画
-                let ptlst = [n | n <- [0..length(hcards!!i)-1], -- カーソルの位置取得
-                        (itod . fx) n <= mpos^._x && itod (env^.grid * (myhk!!n)^.size^.width + fx n) > mpos^._x && itod fy <= mpos^._y && itod (env^.grid * (myhk!!n)^.size^.height + fy) > mpos^._y]
-                    pt = if null ptlst then -1 else ptlst!!0
-                let wid = (myhk!!pt)^.size^.width * env^.grid
-                    hei = (myhk!!pt)^.size^.height * env^.grid
-                when (pt >= 0) $ color green $ translate (v2Int (fx pt) fy) $ polygonOutline [v2Int 0 0, v2Int wid 0, v2Int wid hei, v2Int 0 hei]-- 光らせる
-                return pt
-            _ -> return $ -1
-    return $ ret!!now
+    let env = world^.enviroment
+        maxp = world^.maxplayer
+        nowp = world^.nowplayer
+        csize = cardScale (world^.cardsizeMax) world
+        selected = world^.selectedhandcard
+    focus <- forM [0..maxp-1] $ \n -> do
+        let myhcard = (world^.handcards)!!n
+            start = fst $ (env^.basestart)!!n
+            offset = v2Int (csize^.width + env^.grid * 2) (env^.grid)
+            cardpos x = case n `mod` 4 of
+                0 -> start + offset + (v2Int (x * csize^.width) 0)
+                1 -> start - offset - (v2Int ((x + 1) * csize^.width) (csize^.height))
+        focusMaybe <- forM [0..(length myhcard) - 1] $ \c -> do
+            let cannotput = nowp == n && null ((world^.canputs)!!c)
+            when (n == nowp && c /= selected || n /= nowp) $ translate (cardpos c) $ drawCard (myhcard!!c) env -- 移動中じゃないカードだけ表示
+            when cannotput $ blendMode Multiply $ color (V4 0.6 0.6 0.6 1) $ translate (cardpos c) $ drawBox 0 0 (csize^.width) (csize^.height) -- おけないカードを暗くする
+            let normal = mpos - (cardpos c)
+                isfocus = normal^._x >= 0 && normal^._y >=0 && normal^._x < itod (csize^.width) && normal^._y < itod (csize^.height)
+            if isfocus && nowp == n && not cannotput
+                then do
+                    blendMode Add $ color (V4 0.1 0.1 0.1 1) $ translate (cardpos c) $ drawBox 0 0 (csize^.width) (csize^.height) -- 選択してるカードを明るくする
+                    return $ Just c
+                else return Nothing
+        return $ mapMaybe (\x -> x) focusMaybe
+    return $ if null $ concat focus then Nothing else Just $ head $ concat focus
+
+
+-- メッセージ表示
+drawnotice world str col count =
+    let env = world^.enviroment
+        now = world^.nowplayer
+        fnt = world^.font
+        start = fst $ (env^.basestart)!!now
+        deg = case now of 0 -> 0; 1 -> 180
+        drawstr = do
+            color (col - (V4 0 0 0 (itof count * 0.02))) $ translate (V2 0 (- itod count)) $ text fnt (0.04 * itod (world^.screensize^.width)) str
+    in translate start $ rotateD deg $ drawstr
+
+-- バーストする木野表示
+drawBurstTree tree env count  = case tree of
+    Fork h -> do
+        let scale = Size (h^.card^.size^.width * env^.grid)  (h^.card^.size^.height * env^.grid)
+        color (red - (V4 0 0 0 (itof count * 0.02))) $ translate' (h^.card) (h^.states) env $ drawBox 0 0 (scale^.width) (scale^.height)
+        forM_ (h^.trees) $ \u -> drawBurstTree u env count
+    _ -> line[V2 0 0, V2 0 0]

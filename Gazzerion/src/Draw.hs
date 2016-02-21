@@ -6,7 +6,6 @@ import FreeGame
 import Control.Lens
 import Control.Monad.State
 import FreeGame.Data.Font
-import FreeGame.Class
 import Data.Maybe
 
 itod :: Int -> Double
@@ -100,7 +99,8 @@ drawCanput world = do
         nowcard = (world^.handcards)!!(world^.nowplayer)!!nowhcardindex
         scale = cardScale (nowcard^.size) world
     when (nowhcardindex >= 0) $
-        forM_ (filter (\t -> t^.turn == world^.nowturn) $ map snd $ (world^.canputs)!!nowhcardindex) $ \x -> color red $ translate' nowcard x (world^.enviroment) $ drawBox 0 0 (scale^.width) (scale^.height)
+        forM_ (filter (\t -> t^.turn == world^.nowturn) $ map snd $ (world^.canputs)!!nowhcardindex) $ \x ->
+            color (V4 1.0 0 0 0.5) $ translate' nowcard x (world^.enviroment) $ drawBox 0 0 (scale^.width) (scale^.height)
 
 -- カードの土台表示
 drawbasement world = do

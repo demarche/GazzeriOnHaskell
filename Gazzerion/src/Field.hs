@@ -66,34 +66,13 @@ appDeadend :: Tree -> Size -> Size -> [Tree] -> Tree
 appDeadend tree d fsize f = case tree of
     (Fork h) ->  Fork (h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
         app (child, n) = case child of
-            (Passage p) -> if cannotPutFlag || collisionDetection then DeadEnd else Passage p where
-                --フィールドオーバーチェック
+            (Passage p) -> if cannotPutFlag then DeadEnd else Passage p where
                 doubleCardTmp = [Hub (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版（座標未計算）
                 doubleCard = [a&states.~(connectedState a h n) | a <- doubleCardTmp] -- 上記の座標計算済み
-                cannotPutFlag = and [fieldover a d fsize | a <- map (\x -> x^.states) doubleCard]
-                --コリジョンチェック
-                collisionDetection = and [isCollision a f | a <- doubleCard]
+                --フィールドオーバー＆コリジョンチェック
+                cannotPutFlag = and [(isCollision a f) || fieldover (a^.states) d fsize | a <- doubleCard]
             _ -> appDeadend child d fsize f
     _ -> tree
-
-showcanputs world = forM_ ((world^.handcards)!!(world^.nowplayer)) $ \crd -> forM_ (world^.field) $ \tree -> forM_ [0..length (crd^.connector)-1] $ \trn -> showcanput crd trn tree world
-showcanput crd trn tree world = case tree of
-    (Fork h) -> forM_ (zip (h^.trees) (map (`mod` 4) [4-h^.states^.turn..])) $ \z -> putlist z where
-        putlist (child, n) = case child of
-            (Fork hc) -> forM_ (hc^.trees) $ \t -> showcanput crd trn t world
-            (Passage p) -> do
-                embedIO $ print $ "parent: " ++ (show parentConnector) ++ ", child: " ++ (show childConnector)
-                embedIO $ print $ not colDetection
-                embedIO $ print $ not cannotPutFlag where
-                    parentConnector = (h^.card^.connector)!!((n + h^.states^.turn) `mod` 4)
-                    childConnector = (crd^.connector)!!((n + trn + 2) `mod` 4)
-                    --衝突判定
-                    connected = connectedState (Hub crd (States 0 0 trn) []) h n
-                    colDetection = isCollision (Hub crd connected []) (world^.field)
-                    --フィールドオーバーチェック
-                    cannotPutFlag = fieldover connected (crd^.size) (world^.fieldsize)
-            _ -> embedIO $ print ""
-    _ -> embedIO $ print ""
 
 -- worldから手札の置ける場所リストを取得（イニシエーション以外）
 canput :: ModCard -> Int -> Tree -> World -> [(Int, States)]

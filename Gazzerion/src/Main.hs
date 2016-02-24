@@ -9,6 +9,7 @@ import System.Random
 import Control.Lens
 import Control.Monad (replicateM)
 import Control.Monad.State
+import Magic
 update :: StateT World Game ()
 update = do
     drawGrid =<< get
@@ -132,6 +133,13 @@ mainLoop s = do
   s' <- execStateT update s
   tick
   unlessM (keyDown KeyEscape) $ mainLoop s'
+
+initDecks2 :: StateT World Game ()
+initDecks2 = do
+    dmax <- use deckmax
+    let getDeck = [card_con [0,3,0,0], card_con [3,1,5,1], card_con [0,1,2,1], card_con [0,0,0,1], card_con [4,0,3,2], card_con [4,4,4,4], card_con [3,3,3,3]]
+        getDeck2 = [card_con [2,0,3,0], card_con [3,0,3,1], card_con [3,0,0,2], card_con [1,4,0,4], card_con [0,4,0,4], card_con [4,4,4,4], card_con [3,3,3,3]]
+    decks .= [getDeck, getDeck2]
 
 main = runGame Windowed (Box (V2 0 0) (V2 1440 900)) $ do
     font <- loadFont "VL-PGothic-Regular.ttf"

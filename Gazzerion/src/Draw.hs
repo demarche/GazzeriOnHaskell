@@ -63,7 +63,19 @@ translate' card st env y = (f . g) y  where
 drawTree tree env = case tree of
     Fork h -> do
         translate' (h^.card) (h^.states) env $ drawCard (h^.card) env
-        forM_ (h^.trees) $ \u -> drawTree u env
+        forM_ (zip (h^.trees) [0..]) $ \u -> drawnest u where
+            drawnest (t, n) = case t of
+                Fork _ -> do
+                    color gray $ debugTriangle n
+                    drawTree t env
+                DeadEnd -> do color black $ debugTriangle n; color white $ translate (V2 1 1) $ debugTriangle n
+                NotConnect -> do color red $ debugTriangle n; color blue $ translate (V2 1 1) $ debugTriangle n
+                _ -> line[V2 0 0, V2 0 0]
+            wid = itod $ h^.card^.size^.width * env^.grid
+            hei = itod $ h^.card^.size^.height * env^.grid
+            conPos = [V2 ((wid - cGrid) * 0.5) 0, V2 (wid - cGrid) ((hei - cGrid) * 0.5), V2 ((wid - cGrid) * 0.5) (hei - cGrid), V2 0 ((hei - cGrid) * 0.5)]
+            cGrid =  sqrt $ fromIntegral $ (h^.card^.size^.width * h^.card^.size^.height * ((env^.grid) ^ 2)) `div` 16
+            debugTriangle n = translate' (h^.card) (h^.states) env $ translate (conPos!!n) $ do line[V2 0 0, V2 cGrid cGrid]; line[V2 cGrid 0, V2 0 cGrid]
     _ -> line[V2 0 0, V2 0 0]
 
 -- グリッド線を描画
@@ -162,7 +174,7 @@ drawnotice world str col count =
             color (col - (V4 0 0 0 (itof count * 0.02))) $ translate (V2 0 (- itod count)) $ text fnt (0.04 * itod (world^.screensize^.width)) str
     in translate start $ rotateD deg $ drawstr
 
--- バーストする木野表示
+-- バーストする木の表示
 drawBurstTree tree env count  = case tree of
     Fork h -> do
         let scale = Size (h^.card^.size^.width * env^.grid)  (h^.card^.size^.height * env^.grid)

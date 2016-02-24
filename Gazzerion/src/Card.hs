@@ -25,3 +25,6 @@ randCard2 = do
     r <- fixedrand
     lst <- forM r $ \x -> if x < 0 then return 0 else return x
     return ModCard {_connector = lst, _image = 0, _size = Size 4 6}
+
+-- 指定したコネクタのカード
+card_con lst = ModCard {_connector = lst, _image = 0, _size = Size 4 6}

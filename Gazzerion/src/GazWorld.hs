@@ -13,7 +13,7 @@ import Magic.CanUse
 import System.Directory
 import System.FilePath.Posix
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) (-1) 0 [] [] [] 0 2
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) (-1) 0 [] [] [] 0 2 [2, 2]
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -78,7 +78,9 @@ burst world =
     let hashes = map (\y -> hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
         bursted = filter (\x ->  burstCounter x == Nothing) (world^.field)
         newfield = unDeadEnd bursted
-    in (`resetinit` hashes) $ updateField $ world&field.~newfield
+        now = world^.nowplayer
+        newcosts = take now (world^.costs) ++ [(world^.costs)!!now + sum [numofTreeCard x | x <- world^.field, burstCounter x /= Nothing]] ++ drop (now + 1) (world^.costs)
+    in (`resetinit` hashes) $ updateField $ (world&field.~newfield)&costs.~newcosts
 
 -- イニシエーションリセット
 resetinit :: World -> [Int] -> World
@@ -87,7 +89,7 @@ resetinit world hashes = world&initiations.~ map (\x -> case x of Just y -> if y
 -- 魔法の使用可能状態をセット
 setCanMagic :: World -> World
 setCanMagic world =
-    let canusemagic = map ((`canuseMagic` world) `map`) $ world^.magiccards
+    let canusemagic = zipWith (\x now -> (\card -> canuseMagic card world && card^.cost <= (world^.costs)!!now) `map` x) (world^.magiccards) [0..]
     in world&canmagic.~canusemagic
 
 -- 手札の置ける場所をセット（低バースト考慮）
@@ -133,10 +135,11 @@ dripHandcard n = do
     nowcard <- (`nofhcard` n) <$> get
     return nowcard
 
--- 選択中の魔法カードを除去
+-- 選択中の魔法カードを使用
 removeNowMagic :: World -> World
 removeNowMagic world =
     let mindex = world^.selectedmagiccard
         mcards = world^.magiccards
         now = world^.nowplayer
-    in (world&magiccards .~ (take now mcards) ++ [take mindex (mcards!!now) ++ drop (mindex + 1) (mcards!!now)] ++ (drop (now + 1) mcards))&selectedmagiccard .~ -1
+        newcosts = take now (world^.costs) ++ [(world^.costs)!!now - ((mcards!!now!!mindex)^.cost)] ++ drop (now + 1) (world^.costs)
+    in ((world&magiccards .~ (take now mcards) ++ [take mindex (mcards!!now) ++ drop (mindex + 1) (mcards!!now)] ++ (drop (now + 1) mcards))&selectedmagiccard .~ -1)&costs.~ newcosts

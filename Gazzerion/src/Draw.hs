@@ -151,6 +151,7 @@ drawbasement world = do
                 color (if world^.nowplayer == n then cyan else gray) $ polygon [V2 0 0, V2 (size^._x) 0, size, V2 0 (size^._y)]
                 translate (v2Int (env^.grid) (env^.grid)) $ drawCardBack world
                 translate (v2Int (env^.grid + csize^.width `div` 2 - sizefix) (env^.grid + csize^.height `div` 2 )) $ text fnt fontsize (show decksize)
+                color black $ translate (v2Int (env^.grid) (env^.grid * 8)) $ text fnt fontsize $ "COST:" ++ (show $ (world^.costs)!!n)
         in translate start $ rotateD deg $ drawbase
 
 -- 手札表示

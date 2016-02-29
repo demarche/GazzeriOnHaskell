@@ -47,6 +47,7 @@ data World = World
     , _field :: [Tree]
     , _checkmatedcounter :: Int
     , _lowburst :: Int
+    , _costs :: [Int]
     }
 
 -- カードの状態 x y turn

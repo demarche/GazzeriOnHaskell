@@ -204,8 +204,7 @@ removeCard hash field =
 
 -- フィールドのカード枚数
 numofFieldCard :: [Tree] -> Int
-numofFieldCard field =
-    let numofTreeCard tree = case tree of
+numofFieldCard field = sum $ map numofTreeCard field
+numofTreeCard tree = case tree of
             Fork h -> 1 + numofFieldCard (h^.trees)
             _ -> 0
-    in sum $ map numofTreeCard field

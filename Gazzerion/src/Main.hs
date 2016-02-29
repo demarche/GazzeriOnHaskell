@@ -48,7 +48,8 @@ update = do
             modify setCanPutsAndBurst
             modify setCanMagic
             cpts <- use canputs
-            if null $ concat cpts
+            cmagic <- use canmagic
+            if null (concat cpts) && not (or (cmagic!!now))
                 then mode .= Mate 0 ""
                 else do
                     checkmatedcounter .= 0
@@ -62,6 +63,11 @@ update = do
                 mcards <- use magiccards
                 selectedmagiccard .= mindex
                 mode .= Goto (Magic ((mcards!!now!!mindex)^.funcs) (Interpreter []))
+            cpts <- use canputs
+            when (null $ concat cpts) $ do
+                (\w -> drawnotice w "S:スキップ" red 0) =<< get
+                key <- keyChar 'S'
+                when key $ mode .= Mate 0 ""
         Magic inst mph -> case mph of
             Interpreter arg -> do
                 if null inst
@@ -121,7 +127,7 @@ update = do
         Mate count str
             | count == 0 -> do
                 ckmate <- use checkmatedcounter
-                if ckmate >= maxp -- 全詰み
+                if ckmate + 1 == maxp -- 全詰み
                     then do
                         mode .= Mate 1 "All Checkmate"
                         checkmatedcounter .= 0
@@ -131,8 +137,8 @@ update = do
                         mode .= Mate 1 ((show (now +1)) ++ "P Checkmate")
                         checkmatedcounter += 1
             | count > 50 -> do
-                modify nextplayer
                 mode .= Draw
+                unless (elem str ["All Checkmate"]) $ modify nextplayer
             | otherwise -> do
                 (\w -> drawnotice w str blue count) =<< get
                 mode .= Mate (count + 1) str

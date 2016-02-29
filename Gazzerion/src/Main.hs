@@ -9,18 +9,23 @@ import System.Random
 import Control.Lens
 import Control.Monad (replicateM)
 import Control.Monad.State
-import Magic
+import Magic.Func
+
+takejust (Just n) = n
+
 update :: StateT World Game ()
 update = do
     drawGrid =<< get
     drawbasement =<< get
     focusCardIndex <- drawhandcard =<< get
+    focusMagicIndex <- drawhandmagiccard =<< get
     maxp <- use maxplayer
     font <- use font
     hcards <- use handcards
     now <- use nowplayer
     ph <- use mode
 
+    mb <- mouseButtonL
     fld <- use field
     forM_ fld $ \f -> (f `drawTree`) =<< use enviroment
 
@@ -32,63 +37,87 @@ update = do
             nowplayer .= 0
             modify updateField
             modify setCanPutsAndBurst
-            --cpts <- use canputs--表示
-            --embedIO $ print $ cpts--表示
-            mode .= Choice
+            modify setCanMagic
+            mode .= Choice 1
         Draw -> do
             modify decktohand
-            modify setCanPutsAndBurst
-            cpts <- use canputs--表示
-            --embedIO $ print $ cpts--表示
             nowturn .= 0
             selectedhandcard .= -1
-            if null $ concat cpts -- 詰み判定
+            mode .= MateCheck 1
+        MateCheck num -> do
+            modify setCanPutsAndBurst
+            modify setCanMagic
+            cpts <- use canputs
+            if null $ concat cpts
                 then mode .= Mate 0 ""
                 else do
                     checkmatedcounter .= 0
-                    mode .= Choice
-        Choice -> do
-            mb <- mouseButtonL
+                    mode .= Choice num
+        Choice num -> do
             when (mb && focusCardIndex /= Nothing) $ do
-                mode .= Move False
-                let takejust (Just n) = n
+                mode .= Move num False
                 selectedhandcard .= takejust focusCardIndex
-        Move f -> do
-                mw <- mouseScroll
-                mb <- mouseButtonL
-                when (not f && not mb) $ mode .= Move True
-                nhk <- use selectedhandcard
-                let nowhcard = hcards!!now
-                    nowcard = nowhcard!!nhk
-                    conlen = length (nowcard^.connector)
-                nturn <- use nowturn
-                cp <- use canputs
-                when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
-                when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
-                drawCanput =<< get
-                nowpt <- drawMovingCard =<< get
-                when (mb && f && (Just nhk) == focusCardIndex) $ do
-                    selectedhandcard .= -1
-                    nowturn .= 0
-                    mode .= Goto Choice
-                when (mb && f && nowpt `elem` map snd (cp!!nhk)) $ do
-                    let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
-                    fld <- use field
-                    when (psg == -1) $ do
-                        let newtree = initiation nowcard nowpt fld
-                        field .= newtree
-                        init <- use initiations
-                        initiations .= (take now init) ++ [Just (hashtree $ head newtree)] ++ (drop (now + 1) init)
-                    unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
-                    put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
-                    hcards <- use handcards
-                    deck <- use decks
-                    if length (deck!!now) == 0 && length (hcards!!now) == 0
-                        then mode .= GameOver
-                        else mode .= Burst 0 []
-                    modify updateField
-                    --ff2 <- use field
-                    --embedIO $ print ff2
+            when (mb && focusMagicIndex /= Nothing) $ do
+                let mindex = takejust focusMagicIndex
+                mcards <- use magiccards
+                selectedmagiccard .= mindex
+                mode .= Goto (Magic ((mcards!!now!!mindex)^.funcs) (Interpreter []))
+        Magic inst mph -> case mph of
+            Interpreter arg -> do
+                if null inst
+                    then mode .= Magic [] End
+                    else do
+                        let myinst = head inst
+                        mode .= Magic (drop 1 inst) mph
+                        let myfunc = interpreterMagic $ myinst
+                        modify myfunc
+            SelectField num res -> do
+                focusFieldHash <- selectedCardHash =<< get
+                get >>= \y -> mapM_ (\x -> glowCardGHash x y) res
+                when (mb && focusFieldHash /= Nothing) $ do
+                    let arged = nub $ (takejust focusFieldHash):res
+                    if length arged >= num
+                        then mode .= Magic inst (Interpreter arged)
+                        else mode .= Magic inst (SelectField num arged)
+            End -> do
+                modify removeNowMagic
+                mode .= MateCheck 1
+        Move num f -> do
+            mw <- mouseScroll
+            when (not f && not mb) $ mode .= Move num True
+            nhk <- use selectedhandcard
+            let nowhcard = hcards!!now
+                nowcard = nowhcard!!nhk
+                conlen = length (nowcard^.connector)
+            nturn <- use nowturn
+            cp <- use canputs
+            when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
+            when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
+            drawCanput =<< get
+            nowpt <- drawMovingCard =<< get
+            when (mb && f && (Just nhk) == focusCardIndex) $ do
+                selectedhandcard .= -1
+                nowturn .= 0
+                mode .= Goto (Choice 1)
+            when (mb && f && nowpt `elem` map snd (cp!!nhk)) $ do
+                let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
+                fld <- use field
+                when (psg == -1) $ do
+                    let newtree = initiation nowcard nowpt fld
+                    field .= newtree
+                    init <- use initiations
+                    initiations .= (take now init) ++ [Just (hashtree $ head newtree)] ++ (drop (now + 1) init)
+                unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
+                put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
+                hcards <- use handcards
+                deck <- use decks
+                if length (deck!!now) == 0 && length (hcards!!now) == 0
+                    then  mode .= GameOver
+                    else if num == 1 then mode .= Burst 0 [] else do
+                        nowturn .= 0
+                        selectedhandcard .= -1
+                        mode .= (MateCheck (num - 1))
+                modify updateField
         Mate count str
             | count == 0 -> do
                 ckmate <- use checkmatedcounter
@@ -124,6 +153,8 @@ update = do
                 mode .= Burst (count + 1) bursttree
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
+        PError -> do
+            color red $ translate (V2 300 450) $ text font 48 "Phase Error"
         Goto goto -> do
             mb <- mouseButtonL
             unless mb $ mode .= goto
@@ -144,7 +175,7 @@ initDecks2 = do
 main = runGame Windowed (Box (V2 0 0) (V2 1440 900)) $ do
     font <- loadFont "VL-PGothic-Regular.ttf"
     --cd <- evalStateT randCard ()
-    newW <- execStateT initDecks =<< execStateT updateEnv =<< return (makeWorld font)
+    newW <- execStateT updateEnv =<< execStateT initDecks =<< return (makeWorld font)
 
     {-}forever $ do
       color red $ translate (V2 24 240) $ text font 24 "Press SPACE to start"

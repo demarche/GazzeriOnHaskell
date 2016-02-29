@@ -11,7 +11,9 @@ data Size = Size{_width:: Int, _height:: Int} deriving Show
 -- （将来的に）画像
 data ModCard = ModCard{ _connector :: [Int], _size :: Size, _image :: Int} deriving Show
 
-data Mode = Init | Draw | Choice | Move Bool | Mate Int String | Burst Int [Tree] | GameOver | Goto Mode
+data MagicPhase = Interpreter [Int] | SelectField Int [Int] | End deriving Show
+
+data Mode = Init | Draw | MateCheck Int | Choice Int | Magic [String] MagicPhase | Move Int Bool | Mate Int String | Burst Int [Tree] | GameOver | Goto Mode | PError deriving Show
 
 data Enviroment = Enviroment
     { _grid :: Int
@@ -35,11 +37,13 @@ data World = World
     , _maxmagiccards :: [Int]
     , _decks :: [[ModCard]]
     , _handcards :: [[ModCard]]
-    , _magics :: [[ModCard]]
+    , _magiccards :: [[MagicCard]]
     , _initiations :: [Maybe Int]
     , _selectedhandcard :: Int
+    , _selectedmagiccard :: Int
     , _nowturn :: Int
     , _canputs :: [[(Int, States)]]
+    , _canmagic :: [[Bool]]
     , _field :: [Tree]
     , _checkmatedcounter :: Int
     , _lowburst :: Int
@@ -61,10 +65,14 @@ data Hub = Hub{ _card :: ModCard, _states :: States, _trees :: [Tree]} deriving 
 --      [Tree]  : 次の木
 data Tree = DeadEnd | NotConnect | Passage Int | Fork Hub deriving Show
 
+data DeckCost = S | A | B | C | D | E deriving Show
+data MagicCard = MagicCard{_name :: String, _cost :: Int, _deckcost :: DeckCost, _desc :: String, _funcs :: [String], _img :: Bitmap}
+
 makeLenses ''Hub
 makeLenses ''States
 makeLenses ''World
 makeLenses '' Enviroment
 makeLenses ''ModCard
 makeLenses ''Size
+makeLenses ''MagicCard
 

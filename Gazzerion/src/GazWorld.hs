@@ -8,8 +8,12 @@ import FreeGame
 import Field
 import Control.Lens
 import Control.Monad.State
+import Magic.Load
+import Magic.CanUse
+import System.Directory
+import System.FilePath.Posix
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) 0 [] [] 0 2
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) (-1) 0 [] [] [] 0 2
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -27,7 +31,7 @@ updateEnv = do
         gridX = (ss^.width - mygrid * fs^.width) `div` 2 -- グリッド描画開始位置Y
         gridWid = (mygrid * fs^.width)
         gridHei = (mygrid * fs^.height)
-        getCardsWidth n = mygrid * (cs^.width * (maxh!!n + maxm!!n) + 4) -- n番目のプレイヤーのカードの総width
+        getCardsWidth n = mygrid * (cs^.width * (maxh!!n + maxm!!n + 1) + 4) -- n番目のプレイヤーのカードの総width
         synthesisWidth x = sum [getCardsWidth i | i <- [0..maxp-1], i `mod` 4 == x] -- n番テーブルの総width
         synthesisHeight = mygrid * (2 + cs^.height)
         playerstartPosition n = case n `mod` 4 of
@@ -39,16 +43,23 @@ updateEnv = do
 updateField :: World -> World
 updateField world =
     let f1 = map propCoordinate (world^.field)
-        f' = [appDeadend t1 (world^.cardsizeMin) (world^.fieldsize) f1 | t1 <- f1]
+        f2 = [appDeadend t1 (world^.cardsizeMin) (world^.fieldsize) f1 | t1 <- f1]
+        f' = filter (\x -> case x of Fork h -> True; _ -> False) f2
     in world&field.~f'
 
 -- ランダムデッキ作成
 initDecks :: StateT World Game ()
 initDecks = do
     dmax <- use deckmax
+    mmax <- use maxmagiccards
+    onepair <- lift $ loadMagicAll
+    let mcs = replicate 2 onepair
+    --embedIO $ print allmagic
     let getDeck n = replicateM n $ embedIO $ randCard2
-    dks <- forM dmax $ \x -> getDeck x
+    dks <- mapM getDeck dmax--forM dmax $ \x -> getDeck x
     decks .= dks
+    magiccards .= mcs
+    maxmagiccards .= map length mcs
 
 -- デッキからドロー
 decktohand :: World -> World
@@ -64,11 +75,20 @@ decktohand world =
 -- バースト
 burst :: World -> World
 burst world =
-    let hashes = map (\y -> Just $ hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
+    let hashes = map (\y -> hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
         bursted = filter (\x ->  burstCounter x == Nothing) (world^.field)
         newfield = unDeadEnd bursted
-        newinit = [if init `elem` hashes then Nothing else init | init <- world^.initiations]
-    in updateField $ (world&field.~newfield)&initiations.~newinit
+    in (`resetinit` hashes) $ updateField $ world&field.~newfield
+
+-- イニシエーションリセット
+resetinit :: World -> [Int] -> World
+resetinit world hashes = world&initiations.~ map (\x -> case x of Just y -> if y `elem` hashes then Nothing else x ; Nothing -> x) (world^.initiations)
+
+-- 魔法の使用可能状態をセット
+setCanMagic :: World -> World
+setCanMagic world =
+    let canusemagic = map ((`canuseMagic` world) `map`) $ world^.magiccards
+    in world&canmagic.~canusemagic
 
 -- 手札の置ける場所をセット（低バースト考慮）
 setCanPutsAndBurst :: World -> World
@@ -112,3 +132,11 @@ dripHandcard n = do
     handcards .= (take now hcards) ++ [(take n nowhcard) ++ (drop (n + 1) nowhcard)] ++ (drop (now + 1) hcards)
     nowcard <- (`nofhcard` n) <$> get
     return nowcard
+
+-- 選択中の魔法カードを除去
+removeNowMagic :: World -> World
+removeNowMagic world =
+    let mindex = world^.selectedmagiccard
+        mcards = world^.magiccards
+        now = world^.nowplayer
+    in (world&magiccards .~ (take now mcards) ++ [take mindex (mcards!!now) ++ drop (mindex + 1) (mcards!!now)] ++ (drop (now + 1) mcards))&selectedmagiccard .~ -1

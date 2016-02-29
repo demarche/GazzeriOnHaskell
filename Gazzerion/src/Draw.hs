@@ -33,6 +33,26 @@ drawCard card env = do
         colors = [red, blue, black, green, yellow]
         conPos = [V2 ((wid - cGrid) * 0.5) 0, V2 (wid - cGrid) ((hei - cGrid) * 0.5), V2 ((wid - cGrid) * 0.5) (hei - cGrid), V2 0 ((hei - cGrid) * 0.5)]
 
+-- 魔法カードを描画
+drawMagicCard card world = do
+    let csize = cardScale (Size 4 6) world
+        fontsize = sqrt $ fromIntegral $ (csize^.width * csize^.height) `div` 230
+        env = world^.enviroment
+        bsize = bitmapSize (card^.img)
+        drawframe x y w h = do
+            color (V4 0.95 0.95 0.95 1) $ drawBox x y w h
+            color (V4 0.85 0.85 0.85 1) $ drawBoxOutLine x y w h
+    color white $ drawBox 0 0 (csize^.width) (csize^.height)
+    color black $ drawBoxOutLine 0 0 (csize^.width) (csize^.height)
+    drawframe (env^.grid `div` 4) (env^.grid `div` 4) (csize^.width - env^.grid) (env^.grid `div` 2)
+    color black $ translate (v2Int (env^.grid `div` 4) (env^.grid `div` 4 * 3)) $ text (world^.font) fontsize (card^.name)
+    drawframe (csize^.width - env^.grid `div` 4 * 3) (env^.grid `div` 4) (env^.grid `div` 2) (env^.grid `div` 2)
+    color black $ translate (v2Int (csize^.width - env^.grid `div` 4 * 3) (env^.grid `div` 4 * 3)) $ text (world^.font) fontsize (show $ card^.cost)
+    let imgscale = V2 (itod (csize^.width - env^.grid `div` 2 ) / itod (fst bsize)) (itod (env^.grid * 3) / itod (snd bsize))
+    translate (v2Int (csize^.width `div` 2) ((csize^.height - env^.grid) `div` 2)) $ scale imgscale $ bitmap (card^.img)
+    drawframe (env^.grid `div` 4) (env^.grid * 4 - env^.grid `div` 4) (csize^.width - env^.grid `div` 2) (env^.grid * 2)
+    color black $ translate (v2Int (env^.grid `div` 4) (env^.grid * 4 + env^.grid `div` 4)) $ text (world^.font) fontsize (card^.desc)
+
 -- カードの裏面を描画
 drawCardBack world = do
     color black $ drawBox 0 0 wid hei
@@ -149,7 +169,7 @@ drawhandcard world = do
                 0 -> start + offset + (v2Int (x * csize^.width) 0)
                 1 -> start - offset - (v2Int ((x + 1) * csize^.width) (csize^.height))
         focusMaybe <- forM [0..(length myhcard) - 1] $ \c -> do
-            let cannotput = nowp == n && null ((world^.canputs)!!c)
+            let cannotput = nowp == n && if c >= length (world^.canputs) then True else null ((world^.canputs)!!c)
             when (n == nowp && c /= selected || n /= nowp) $ translate (cardpos c) $ drawCard (myhcard!!c) env -- 移動中じゃないカードだけ表示
             when cannotput $ blendMode Multiply $ color (V4 0.6 0.6 0.6 1) $ translate (cardpos c) $ drawBox 0 0 (csize^.width) (csize^.height) -- おけないカードを暗くする
             let normal = mpos - (cardpos c)
@@ -162,6 +182,34 @@ drawhandcard world = do
         return $ mapMaybe (\x -> x) focusMaybe
     return $ if null $ concat focus then Nothing else Just $ head $ concat focus
 
+-- 魔法カード表示
+drawhandmagiccard world = do
+    mpos <- mousePosition
+    let env = world^.enviroment
+        maxp = world^.maxplayer
+        nowp = world^.nowplayer
+        csize = cardScale (world^.cardsizeMax) world
+        selected = world^.selectedmagiccard
+    focus <- forM [0..maxp-1] $ \n -> do
+        let mymcard = (world^.magiccards)!!n
+            start = fst $ (env^.basestart)!!n
+            offset = v2Int ((csize^.width * (1 + (world^.maxhandcards)!!n)) + env^.grid * 3) (env^.grid)
+            cardpos x = case n `mod` 4 of
+                0 -> start + offset + (v2Int (x * csize^.width) 0)
+                1 -> start - offset - (v2Int ((x + 1) * csize^.width) (csize^.height))
+        focusMaybe <- forM [0..(length mymcard) - 1] $ \c -> do
+            let cannotput = nowp /= n || null (world^.canmagic) || not ((world^.canmagic)!!n!!c)
+            when (n == nowp && c /= selected || n /= nowp) $ translate (cardpos c) $ drawMagicCard (mymcard!!c) world--drawCardBack world -- 移動中じゃないカードだけ表示
+            when cannotput $ blendMode Multiply $ color (V4 0.6 0.6 0.6 1) $ translate (cardpos c) $ drawBox 0 0 (csize^.width) (csize^.height) -- おけないカードを暗くする
+            let normal = mpos - (cardpos c)
+                isfocus = normal^._x >= 0 && normal^._y >=0 && normal^._x < itod (csize^.width) && normal^._y < itod (csize^.height)
+            if isfocus && nowp == n && not cannotput
+                then do
+                    blendMode Add $ color (V4 0.1 0.1 0.1 1) $ translate (cardpos c) $ drawBox 0 0 (csize^.width) (csize^.height) -- 選択してるカードを明るくする
+                    return $ Just c
+                else return Nothing
+        return $ mapMaybe (\x -> x) focusMaybe
+    return $ if null $ concat focus then Nothing else Just $ head $ concat focus
 
 -- メッセージ表示
 drawnotice world str col count =
@@ -181,3 +229,28 @@ drawBurstTree tree env count  = case tree of
         color (red - (V4 0 0 0 (itof count * 0.02))) $ translate' (h^.card) (h^.states) env $ drawBox 0 0 (scale^.width) (scale^.height)
         forM_ (h^.trees) $ \u -> drawBurstTree u env count
     _ -> line[V2 0 0, V2 0 0]
+
+-- カーソルが乗っているカードを探す
+selectedCardHash world = do
+    mpos <- mousePosition
+    let env = world^.enviroment
+        search tree = case tree of
+            Fork h -> let csize = cardScale (h^.card^.size) world
+                          normal = mpos - v2Int (env^.gridx + env^.grid * h^.states^.posx) (env^.gridy + env^.grid * h^.states^.posy)
+                in if normal^._x >= 0 && normal^._y >= 0 && normal^._x < (itod $ csize^.width) && normal^._y < (itod $ csize^.height)
+                        then [hashtree tree]
+                        else concat $ map search (h^.trees)
+            _ -> []
+        result = concat $ map search (world^.field)
+    unless (null result) $ glowCardGHash (head result) world
+    return $ if null result then Nothing else Just $ head result
+
+-- hashのフィールドカードを光らす
+glowCardGHash hash world =
+    let glowTree tree hash world = case tree of
+            Fork h -> if  hash == hashtree tree
+                then  blendMode Add $ color (V4 0.1 0.1 0.1 1) $ translate' (h^.card) (h^.states) (world^.enviroment) $ drawBox 0 0 (csize^.width) (csize^.height)
+                else mapM_ (\x -> glowTree x hash world) (h^.trees)
+                where csize = cardScale (h^.card^.size) world
+            _ ->  line[V2 0 0, V2 0 0]
+    in mapM_ (\x -> glowTree x hash world) (world^.field)

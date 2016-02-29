@@ -39,7 +39,7 @@ toTree x s trees ignores = Fork (Hub x s forks2)
         len = length $ x^.connector -- コネクタの数
         moduloID z = filter (\y -> y `mod` len==(z+len-(s^.turn)) `mod` len) un -- コネクタの数を法とするxと等しい未使用パッセージの無限リスト
         ids = [(moduloID y)!!0 | y<-[0..len-1]]
-        forks = [if (y `mod` len) `elem` map (`mod` len) ignores then NotConnect else Passage y | y <-ids]
+        forks = [if (y `mod` len) `elem` map (`mod` len) ignores then DeadEnd else Passage y | y <-ids]
         --connector:0 をNotConnect化
         forks2 = [if (x^.connector)!!y == 0 then NotConnect else forks!!y | y <- [0..len-1]]
 
@@ -56,21 +56,21 @@ initiation x s ts = (toTree x s ts []):ts
 --      old_c   : 親のカード
 propCoordinate :: Tree -> Tree
 propCoordinate tree = case tree of
-    (Fork h) -> Fork (h&trees.~(map prop $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
-        prop (child, n) = case child of
+    (Fork h) -> Fork (h&trees.~(zipWith prop (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+        prop child n = case child of
             (Fork hc) -> propCoordinate $ Fork (hc&states.~(connectedState hc h n))
             _ -> child
     _ -> tree
 -- おけない場所のDeadEnd化
 appDeadend :: Tree -> Size -> Size -> [Tree] -> Tree
 appDeadend tree d fsize f = case tree of
-    (Fork h) ->  Fork (h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
-        app (child, n) = case child of
+    (Fork h) ->  Fork (h&trees.~(zipWith app (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+        app child n = case child of
             (Passage p) -> if cannotPutFlag then DeadEnd else Passage p where
                 doubleCardTmp = [Hub (ModCard [-1,-1,-1,-1] d 0) (States 0 0 a) []| a <- [0,1]] -- 最小サイズカードの縦横版（座標未計算）
                 doubleCard = [a&states.~(connectedState a h n) | a <- doubleCardTmp] -- 上記の座標計算済み
                 --フィールドオーバー＆コリジョンチェック
-                cannotPutFlag = and [(isCollision a f) || fieldover (a^.states) d fsize | a <- doubleCard]
+                cannotPutFlag = all (\a -> isCollision a f || fieldover (a^.states) d fsize) doubleCard
             _ -> appDeadend child d fsize f
     _ -> tree
 
@@ -78,8 +78,8 @@ appDeadend tree d fsize f = case tree of
 canput :: ModCard -> Int -> Tree -> World -> [(Int, States)]
 canput crd trn tree world =
     case tree of
-        (Fork h) -> concat $ map putlist $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..] where
-            putlist (child, n) = case child of
+        (Fork h) -> concat $ zipWith putlist (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..] where
+            putlist child n = case child of
                 (Fork hc) -> canput crd trn (Fork hc) world
                 (Passage p) -> if (parentConnector < 0 || parentConnector == childConnector) && not colDetection && not cannotPutFlag then [(p, connected)] else [] where
                     parentConnector = (h^.card^.connector)!!((n + h^.states^.turn) `mod` 4)
@@ -172,11 +172,11 @@ hashlist (x:xs) =
         then hash fnv_offset_basis
         else hash $ hashlist xs
 
--- DeadEndを元に戻す
+-- 全てのDeadEndをPassageに変更
 unDeadEnd :: [Tree] -> [Tree]
 unDeadEnd field = map (\t -> unDeadEndTree t field) field
 unDeadEndTree tree field = case tree of
-    (Fork h) ->  Fork (h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
+    (Fork h) ->  Fork $ h&trees.~(map app $ zip (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..]) where
         app (child, n) = case child of
             DeadEnd -> Passage ((moduloID n)!!0) where
                 un = (unusedPassage field)
@@ -184,3 +184,28 @@ unDeadEndTree tree field = case tree of
                 moduloID z = filter (\y -> y `mod` len==(z+len-(h^.states^.turn)) `mod` len) un -- コネクタの数を法とするxと等しい未使用パッセージの無限リスト
             _ -> unDeadEndTree child field
     _ -> tree
+
+-- フィールドから特定hashのカードを除去
+removeCard hash field =
+    let childForks tree hash = case tree of
+            Fork h -> if hash == hashtree tree
+                    then filter extracttrees (h^.trees)
+                    else concat $ map (`childForks` hash) (h^.trees)
+                where extracttrees t = case t of Fork _ -> True; _ -> False
+            _ -> []
+        removeCardbyTree tree hash = case tree of
+            Fork h -> if hash == hashtree tree
+                    then DeadEnd
+                    else Fork $ h&trees.~map (`removeCardbyTree` hash) (h^.trees)
+            _ -> tree
+        childs = concat $ map (`childForks` hash) field
+        removed =  map (`removeCardbyTree` hash) field
+    in unDeadEnd $ removed ++ childs
+
+-- フィールドのカード枚数
+numofFieldCard :: [Tree] -> Int
+numofFieldCard field =
+    let numofTreeCard tree = case tree of
+            Fork h -> 1 + numofFieldCard (h^.trees)
+            _ -> 0
+    in sum $ map numofTreeCard field

@@ -26,6 +26,7 @@ update = do
     ph <- use mode
 
     mb <- mouseButtonL
+    mw <- mouseScroll
     fld <- use field
     forM_ fld $ \f -> (f `drawTree`) =<< use enviroment
 
@@ -38,13 +39,13 @@ update = do
             modify updateField
             modify setCanPutsAndBurst
             modify setCanMagic
-            mode .= Choice 1
+            mode .= Choice
         Draw -> do
             modify decktohand
             nowturn .= 0
             selectedhandcard .= -1
-            mode .= MateCheck 1
-        MateCheck num -> do
+            mode .= MateCheck
+        MateCheck -> do
             modify setCanPutsAndBurst
             modify setCanMagic
             cpts <- use canputs
@@ -52,13 +53,14 @@ update = do
             if null (concat cpts) && not (or (cmagic!!now))
                 then mode .= Mate 0 ""
                 else do
-                    checkmatedcounter .= 0
-                    mode .= Choice num
-        Choice num -> do
+                    mode .= Choice
+        Choice -> do
             when (mb && focusCardIndex /= Nothing) $ do
-                mode .= Move num False
+                checkmatedcounter .= 0
+                mode .= Move False
                 selectedhandcard .= takejust focusCardIndex
             when (mb && focusMagicIndex /= Nothing) $ do
+                checkmatedcounter .= 0
                 let mindex = takejust focusMagicIndex
                 mcards <- use magiccards
                 selectedmagiccard .= mindex
@@ -77,21 +79,40 @@ update = do
                         mode .= Magic (drop 1 inst) mph
                         let myfunc = interpreterMagic $ myinst
                         modify myfunc
-            SelectField num res -> do
+            SelectFieldCard num res -> do
                 focusFieldHash <- selectedCardHash =<< get
                 get >>= \y -> mapM_ (\x -> glowCardGHash x y) res
                 when (mb && focusFieldHash /= Nothing) $ do
                     let arged = nub $ (takejust focusFieldHash):res
                     if length arged >= num
                         then mode .= Magic inst (Interpreter arged)
-                        else mode .= Magic inst (SelectField num arged)
+                        else mode .= Magic inst (SelectFieldCard num arged)
+            SelectField arg card canburst -> do
+                nturn <- use nowturn
+                cursor <- (`drawFollowingCard` card) =<< get
+                when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` 4
+                when (mw^._y < 0) $ nowturn .= (nturn + 3) `mod` 4
+                when mb $ do
+                    fld <- use field
+                    fsize <- use fieldsize
+                    low <- use lowburst
+                    minsize <- use cardsizeMin
+                    let newtree = initiation card cursor fld
+                        gethub (Fork h) = h
+                        refleshed = map (\x -> appDeadend x minsize fsize newtree) newtree; highhashes = [hashtree x | x <- newtree, not $ isLowburstTree x low]
+                        ignoreLowBurst = filter (\x -> elem (hashtree x) highhashes) refleshed -- refleshedから低バーストのものを除いたもの
+                    when (not (isCollision (gethub (head newtree)) fld) && not (fieldover cursor (card^.size) fsize) && and [burstCounter t == Nothing || if canburst then numofTreeCard t > low else False| t <- ignoreLowBurst]) $ do
+                        field .= refleshed
+                        if isburst refleshed low
+                            then mode .= Burst 0 [] (Magic inst (Interpreter arg))
+                            else mode .= Magic inst (Interpreter arg)
             End -> do
                 modify removeNowMagic
-                mode .= MateCheck 1
-        Move num f -> do
-            mw <- mouseScroll
-            when (not f && not mb) $ mode .= Move num True
+                mode .= MateCheck
+        Move f -> do
+            when (not f && not mb) $ mode .= Move True
             nhk <- use selectedhandcard
+            maxh <- use maxhandcards
             let nowhcard = hcards!!now
                 nowcard = nowhcard!!nhk
                 conlen = length (nowcard^.connector)
@@ -99,12 +120,12 @@ update = do
             cp <- use canputs
             when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` conlen
             when (mw^._y < 0) $ nowturn .= (nturn + conlen - 1) `mod` conlen
-            drawCanput =<< get
+            when (nhk < maxh!!now) $drawCanput =<< get
             nowpt <- drawMovingCard =<< get
             when (mb && f && (Just nhk) == focusCardIndex) $ do
                 selectedhandcard .= -1
                 nowturn .= 0
-                mode .= Goto (Choice 1)
+                mode .= Goto Choice
             when (mb && f && nowpt `elem` map snd (cp!!nhk)) $ do
                 let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
                 fld <- use field
@@ -117,12 +138,14 @@ update = do
                 put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                 hcards <- use handcards
                 deck <- use decks
+                num <- use numofput
                 if length (deck!!now) == 0 && length (hcards!!now) == 0
                     then  mode .= GameOver
-                    else if num == 1 then mode .= Burst 0 [] else do
+                    else if num == 1 then mode .= Burst 0 [] Draw else do
                         nowturn .= 0
                         selectedhandcard .= -1
-                        mode .= (MateCheck (num - 1))
+                        numofput .= num - 1
+                        mode .= MateCheck
                 modify updateField
         Mate count str
             | count == 0 -> do
@@ -142,21 +165,22 @@ update = do
             | otherwise -> do
                 (\w -> drawnotice w str blue count) =<< get
                 mode .= Mate (count + 1) str
-        Burst count bursttree
+        Burst count bursttree next
             | count == 0 -> do
                 field <- use field
-                if isburst field
-                    then mode .= Burst 1 (burstfilter field)
+                low <- use lowburst
+                if isburst field low
+                    then mode .= Burst 1 (burstfilter field low) next
                     else do
                         modify nextplayer
-                        mode .= Draw
+                        mode .= next
                 modify burst
-            | count > 50 -> mode .= Draw
+            | count > 50 -> mode .= next
             | otherwise -> do
                 env <- use enviroment
                 forM_ bursttree $ \t -> color red $ drawBurstTree t env count
                 (\w -> drawnotice w ((show (now + 1)) ++ "P Burst") red count) =<< get
-                mode .= Burst (count + 1) bursttree
+                mode .= Burst (count + 1) bursttree next
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
         PError -> do

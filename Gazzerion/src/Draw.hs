@@ -86,7 +86,7 @@ drawTree tree env = case tree of
         forM_ (zip (h^.trees) [0..]) $ \u -> drawnest u where
             drawnest (t, n) = case t of
                 Fork _ -> do
-                    color gray $ debugTriangle n
+                    color gray $ debugLine n
                     drawTree t env
                 DeadEnd -> do color black $ debugTriangle n; color white $ translate (V2 1 1) $ debugTriangle n
                 NotConnect -> do color red $ debugTriangle n; color blue $ translate (V2 1 1) $ debugTriangle n
@@ -96,6 +96,7 @@ drawTree tree env = case tree of
             conPos = [V2 ((wid - cGrid) * 0.5) 0, V2 (wid - cGrid) ((hei - cGrid) * 0.5), V2 ((wid - cGrid) * 0.5) (hei - cGrid), V2 0 ((hei - cGrid) * 0.5)]
             cGrid =  sqrt $ fromIntegral $ (h^.card^.size^.width * h^.card^.size^.height * ((env^.grid) ^ 2)) `div` 16
             debugTriangle n = translate' (h^.card) (h^.states) env $ translate (conPos!!n) $ do line[V2 0 0, V2 cGrid cGrid]; line[V2 cGrid 0, V2 0 cGrid]
+            debugLine n = translate' (h^.card) (h^.states) env $ translate (conPos!!n) $ do line[V2 0 (cGrid * 0.5), V2 (cGrid * 2) (cGrid * 0.5)]
     _ -> line[V2 0 0, V2 0 0]
 
 -- グリッド線を描画
@@ -107,22 +108,27 @@ drawGrid world = do
 
 -- 移動中のカードを描画
 drawMovingCard world = do
-    mp <- mousePosition
     let nowcard = ((world^.handcards)!!(world^.nowplayer))!!(world^.selectedhandcard)
-        env = world^.enviroment
+    cusor <- drawFollowingCard world nowcard
+    return cusor
+
+-- カードを指定してカーソルに追尾
+drawFollowingCard world card = do
+    mp <- mousePosition
+    let env = world^.enviroment
         fsize = world^.fieldsize
-        Size wid hei = cardScale (nowcard^.size) world
+        Size wid hei = cardScale (card^.size) world
         v2cardscale = v2Int wid hei
         cardpos = if even (world^.nowturn) then mp - 0.5 * v2cardscale else mp - 0.5 * (V2 (v2cardscale^._y) (v2cardscale^._x))
-        fix_size = if even (world^.nowturn) then Size (nowcard^.size^.width-1) (nowcard^.size^.height-1) else Size (nowcard^.size^.height-1) (nowcard^.size^.width-1)
-        deg = itod $ 360 * (world^.nowturn) `div` length (nowcard^.connector)
+        fix_size = if even (world^.nowturn) then Size (card^.size^.width-1) (card^.size^.height-1) else Size (card^.size^.height-1) (card^.size^.width-1)
+        deg = itod $ 360 * (world^.nowturn) `div` length (card^.connector)
         movedpos = fixturn cardpos (world^.nowturn) wid hei -- 調整後の座標
         x = dtoi (cardpos^._x) -  env^.gridx;y = dtoi (cardpos^._y) - env^.gridy
         fieldpt = v2Int (x `div` env^.grid) (y `div` env^.grid)
         fitted = if x >= 0 && y >= 0 && x < env^.grid * (fsize^.width - fix_size^.width) && y < env^.grid * (fsize^.height - fix_size^.height)
             then fixturn (fieldpt ^* itod (env^.grid) + (v2Int (env^.gridx) (env^.gridy))) (world^.nowturn) wid hei
             else movedpos
-    translate fitted $ rotateD deg $ drawCard nowcard env
+    translate fitted $ rotateD deg $ drawCard card env
     return $ States (dtoi (fieldpt^._x)) (dtoi (fieldpt^._y)) (world^.nowturn)
 
 -- 置ける場所をハイライト

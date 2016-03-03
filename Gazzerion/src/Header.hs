@@ -11,9 +11,9 @@ data Size = Size{_width:: Int, _height:: Int} deriving Show
 -- （将来的に）画像
 data ModCard = ModCard{ _connector :: [Int], _size :: Size, _image :: Int} deriving Show
 
-data MagicPhase = Interpreter [Int] | SelectField Int [Int] | End deriving Show
+data MagicPhase = Interpreter [Int] | SelectFieldCard Int [Int] | SelectField [Int] ModCard Bool | End deriving Show
 
-data Mode = Init | Draw | MateCheck Int | Choice Int | Magic [String] MagicPhase | Move Int Bool | Mate Int String | Burst Int [Tree] | GameOver | Goto Mode | PError deriving Show
+data Mode = Init | Draw | MateCheck | Choice | Magic [String] MagicPhase | Move Bool | Mate Int String | Burst Int [Tree] Mode | GameOver | Goto Mode | PError deriving Show
 
 data Enviroment = Enviroment
     { _grid :: Int
@@ -48,6 +48,7 @@ data World = World
     , _checkmatedcounter :: Int
     , _lowburst :: Int
     , _costs :: [Int]
+    , _numofput :: Int
     }
 
 -- カードの状態 x y turn

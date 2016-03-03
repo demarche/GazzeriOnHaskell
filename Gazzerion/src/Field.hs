@@ -104,12 +104,16 @@ canputInit crd trn world =
     in filter iscol allinitposes
 
 -- バーストフラグ
-isburst :: [Tree] -> Bool
-isburst field = or [burstCounter t /= Nothing | t <- field]
+isburst :: [Tree] -> Int -> Bool
+isburst field low = or [burstCounter t /= Nothing && numofTreeCard t > low | t <- field]
+
+-- 低バーストの木フラグ
+isLowburstTree :: Tree -> Int -> Bool
+isLowburstTree tree low = burstCounter tree /= Nothing && numofTreeCard tree <= low
 
 -- バーストする木
-burstfilter :: [Tree] -> [Tree]
-burstfilter field = filter (\t -> burstCounter t /= Nothing ) field
+burstfilter :: [Tree] -> Int -> [Tree]
+burstfilter field low = filter (\t -> burstCounter t /= Nothing && numofTreeCard t > low ) field
 
 -- 木ごとのバースト数
 burstCounter tree =

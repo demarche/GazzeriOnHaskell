@@ -13,7 +13,7 @@ import Magic.CanUse
 import System.Directory
 import System.FilePath.Posix
 
-makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) (-1) 0 [] [] [] 0 2 [2, 2]
+makeWorld font = World Init (Size 4 6) (Size 4 6) font (Size 18 24) (Enviroment 0 0 0 0 0 []) (Size 1440 900) 2 0 [100, 100] [3, 3] [3, 3] [[], []] [[], []] [[], []] [Nothing, Nothing] (-1) (-1) 0 [] [] [] 0 2 [10,10] 1
 
 -- 大域的な環境の更新
 -- グリッドのサイズ、開始位置
@@ -75,8 +75,8 @@ decktohand world =
 -- バースト
 burst :: World -> World
 burst world =
-    let hashes = map (\y -> hashtree y) $ filter (\x ->  burstCounter x /= Nothing) (world^.field) -- バーストする木のハッシュ
-        bursted = filter (\x ->  burstCounter x == Nothing) (world^.field)
+    let hashes = map (\y -> hashtree y) $ filter (\x ->  burstCounter x /= Nothing && numofTreeCard x > (world^.lowburst)) (world^.field) -- バーストする木のハッシュ
+        bursted = filter (\x -> not $ elem (hashtree x) hashes ) (world^.field)
         newfield = unDeadEnd bursted
         now = world^.nowplayer
         newcosts = take now (world^.costs) ++ [(world^.costs)!!now + sum [numofTreeCard x | x <- world^.field, burstCounter x /= Nothing]] ++ drop (now + 1) (world^.costs)
@@ -109,8 +109,9 @@ setCanPuts world = world&canputs.~[initputs crd ++ normalputs crd | crd <- (worl
 -- 手札の置ける場所から低バーストするものを取り除く
 unsetCantPutsByLowBurst :: World -> World
 unsetCantPutsByLowBurst world = world&canputs.~[filter (`ishighburst` (nofhcard world n)) ((world^.canputs)!!n) | n <- [0..length (world^.canputs)-1]] where
-    ishighburstfield wld = null $ filter (<= wld^.lowburst) $ mapMaybe burstCounter (wld^.field)
-    ishighburst (p, st) card = (ishighburstfield . updateField) $ world&field.~ if p < 0
+    alreadyLowburstHash = [hashtree x | x <- world^.field, isLowburstTree x (world^.lowburst)] -- 既に低バーストなもののハッシュ
+    ishighburstfield wld = null $ filter (<= wld^.lowburst) $ mapMaybe burstCounter $ filter (\x -> not $ elem (hashtree x) alreadyLowburstHash) (wld^.field)
+    ishighburst (p, st) card = ishighburstfield $ updateField $ world&field.~ if p < 0
         then initiation card st (world^.field)
         else insertCard p card (st^.turn) (world^.field)
 

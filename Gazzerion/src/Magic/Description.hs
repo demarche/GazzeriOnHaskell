@@ -1,6 +1,7 @@
 module Magic.Description where
 import Text.Parsec
 import Data.List.Split
+import Data.List
 import Foreign.C.String          (newCStringLen)
 import FreeGame
 
@@ -17,6 +18,25 @@ insertNewline (x:xs) total = do
 insertNewline [] _ = return ""
 
 number = read <$> many1 digit
+
+cardparser = do
+    string "card"
+    spaces
+    up <- number
+    spaces
+    right <- number
+    spaces
+    down <- number
+    spaces
+    left <- number
+    spaces
+    width <- number
+    spaces
+    height <- number
+    let conlst = [up, right, down, left]
+        conToStr con = case con of 6 -> "自由色"; 0 -> "接続不可"; 1 -> "赤"; 2 -> "青"; 3 -> "黒"; 4 -> "緑"; 5 -> "黄"
+        conStr = if 1 == length (group conlst) then "全て" ++ (conToStr up) else concat $ intersperse "," $ map conToStr conlst
+    return $ (show width) ++ "x" ++ (show height) ++ "," ++ conStr ++ "のカード"
 
 description = do
     try $ string "select_fieldcard"
@@ -49,9 +69,16 @@ description = do
     spaces
     x <- number
     return $ "自分の手札を" ++ (if x <= 0 then "全て" else (show x)  ++ "枚") ++ "捨てる．\n"
+    Text.Parsec.<|> do
+    try $ string "usecard"
+    spaces
+    x <- cardparser
+    spaces
+    y <- number
+    return $ x ++ "をフィールドに置く．※このカードはバーストすることが" ++ if y == 0 then "できない\n" else "できる\n"
 
 descriptionMagic :: String -> String
-descriptionMagic str =  case  parse description "desc" str of
+descriptionMagic str =  case parse description "desc" str of
         Right a -> a
         Left a -> show a
 

@@ -21,12 +21,29 @@ magicarg world = case world^.mode of
     Magic _ (Interpreter arg) -> arg
     _ -> []
 
+cardparser = do
+    string "card"
+    spaces
+    up <- number
+    spaces
+    right <- number
+    spaces
+    down <- number
+    spaces
+    left <- number
+    spaces
+    width <- number
+    spaces
+    height <- number
+    return ModCard {_connector = [up, right, down, left], _image = 0, _size = Size width height}
+
+
 -- 命令パーサー
 instruct = do
     try $ string "select_fieldcard"
     spaces
     x <- number
-    return $ \world -> world&mode.~(Magic (magicinsts world) (SelectField x []))
+    return $ \world -> world&mode.~(Magic (magicinsts world) (SelectFieldCard x []))
     Text.Parsec.<|> do
     try $ string "clearfield"
     return $ \world -> fractalfix (\x w -> (`resetinit` [x]) $ updateField $ w&field.~removeCard x (w^.field)) (magicarg world) world
@@ -34,7 +51,7 @@ instruct = do
     try $ string "incput"
     spaces
     x <- number
-    return $ \world -> removeNowMagic $ world&mode.~(Choice x)
+    return $ \world -> world&numofput.~x
     Text.Parsec.<|> do
     try $ string "removedeck"
     spaces
@@ -45,7 +62,7 @@ instruct = do
         in world&decks.~ take now (world^.decks) ++ [drop (if x <= 0 then length nowdeck else min x (length nowdeck)) nowdeck] ++ drop (now + 1) (world^.decks)
     Text.Parsec.<|> do
     try $ string "turnend"
-    return $ \world -> removeNowMagic $ world&mode.~(Burst 0 [])
+    return $ \world -> removeNowMagic $ world&mode.~(Burst 0 [] Draw)
     Text.Parsec.<|> do
     try $ string "myinit"
     spaces
@@ -62,6 +79,13 @@ instruct = do
         let now = world^.nowplayer
             nowhand = (world^.handcards)!!(world^.nowplayer)
         in world&handcards.~ take now (world^.handcards) ++ [drop (if x <= 0 then length nowhand else min x (length nowhand)) nowhand] ++ drop (now + 1) (world^.handcards)
+    Text.Parsec.<|> do
+    try $ string "usecard"
+    spaces
+    x <- cardparser
+    spaces
+    y <- number
+    return $ \world -> world&mode.~(Magic (magicinsts world) (SelectField [] x (y /= 0)))
 
 defaulter :: World -> World
 defaulter world = world&mode.~PError

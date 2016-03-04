@@ -62,9 +62,7 @@ update = do
             when (mb && focusMagicIndex /= Nothing) $ do
                 checkmatedcounter .= 0
                 let mindex = takejust focusMagicIndex
-                mcards <- use magiccards
-                selectedmagiccard .= mindex
-                mode .= Goto (Magic ((mcards!!now!!mindex)^.funcs) (Interpreter []))
+                modify (`magicStart` mindex)
             cpts <- use canputs
             when (null $ concat cpts) $ do
                 (\w -> drawnotice w "S:スキップ" red 0) =<< get
@@ -99,9 +97,9 @@ update = do
                     minsize <- use cardsizeMin
                     let newtree = initiation card cursor fld
                         gethub (Fork h) = h
-                        refleshed = map (\x -> appDeadend x minsize fsize newtree) newtree; highhashes = [hashtree x | x <- newtree, not $ isLowburstTree x low]
-                        ignoreLowBurst = filter (\x -> elem (hashtree x) highhashes) refleshed -- refleshedから低バーストのものを除いたもの
-                    when (not (isCollision (gethub (head newtree)) fld) && not (fieldover cursor (card^.size) fsize) && and [burstCounter t == Nothing || if canburst then numofTreeCard t > low else False| t <- ignoreLowBurst]) $ do
+                        refleshed = map (\x -> appDeadend x minsize fsize newtree) newtree
+                        burst = detectLowHighburst newtree refleshed low
+                    when (not (isCollision (gethub (head newtree)) fld) && not (fieldover cursor (card^.size) fsize) && (not . fst) burst && (canburst || (not . snd) burst)) $ do
                         field .= refleshed
                         if isburst refleshed low
                             then mode .= Burst 0 [] (Magic inst (Interpreter arg))

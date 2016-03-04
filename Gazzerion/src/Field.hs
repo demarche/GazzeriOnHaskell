@@ -189,22 +189,28 @@ unDeadEndTree tree field = case tree of
             _ -> unDeadEndTree child field
     _ -> tree
 
--- フィールドから特定hashのカードを除去
-removeCard hash field =
+-- フィールドの特定hashのカードを操作
+modifyCard hash field f =
     let childForks tree hash = case tree of
             Fork h -> if hash == hashtree tree
                     then filter extracttrees (h^.trees)
                     else concat $ map (`childForks` hash) (h^.trees)
                 where extracttrees t = case t of Fork _ -> True; _ -> False
             _ -> []
-        removeCardbyTree tree hash = case tree of
+        modifyCardbyTree tree hash = case tree of
             Fork h -> if hash == hashtree tree
                     then DeadEnd
-                    else Fork $ h&trees.~map (`removeCardbyTree` hash) (h^.trees)
+                    else Fork $ h&trees.~map (`modifyCardbyTree` hash) (h^.trees)
             _ -> tree
+        getHashCard tree hash = case tree of
+            Fork h -> if hash == hashtree tree
+                    then [h]
+                    else concat $ map (`getHashCard` hash) (h^.trees)
+            _ -> []
         childs = concat $ map (`childForks` hash) field
-        removed =  map (`removeCardbyTree` hash) field
-    in unDeadEnd $ removed ++ childs
+        removed =  map (`modifyCardbyTree` hash) field
+        targetHub = head $ concat $ map (`getHashCard` hash) field
+    in unDeadEnd $ removed ++ childs ++ [f targetHub]
 
 -- フィールドのカード枚数
 numofFieldCard :: [Tree] -> Int

@@ -46,7 +46,7 @@ instruct = do
     return $ \world -> world&mode.~(Magic (magicinsts world) (SelectFieldCard x []))
     Text.Parsec.<|> do
     try $ string "clearfield"
-    return $ \world -> fractalfix (\x w -> (`resetinit` [x]) $ updateField $ w&field.~removeCard x (w^.field)) (magicarg world) world
+    return $ \world -> fractalfix (\x w -> (`resetinit` [x]) $ updateField $ w&field.~modifyCard x (w^.field) (\h -> DeadEnd)) (magicarg world) world
     Text.Parsec.<|> do
     try $ string "incput"
     spaces
@@ -84,8 +84,21 @@ instruct = do
     spaces
     x <- cardparser
     spaces
-    y <- number
-    return $ \world -> world&mode.~(Magic (magicinsts world) (SelectField [] x (y /= 0)))
+    canburst <- number
+    return $ \world -> world&mode.~(Magic (magicinsts world) (SelectField [] x (canburst /= 0)))
+    Text.Parsec.<|> do
+    try $ string "changefieldcard"
+    spaces
+    cd <- cardparser
+    spaces
+    canburst <- number
+    let noconnect h = h&trees.~map (\x -> NotConnect) (h^.trees)
+    return $ \world ->
+        let putted = fractalfix (\x w -> w&field.~modifyCard x (w^.field) (\h -> Fork (noconnect h&card.~cd))) (magicarg world) world
+            updated = updateField putted
+            low = world^.lowburst
+            burst = detectLowHighburst (putted^.field) (updated^.field) low
+        in if (not . fst) burst && (canburst /= 0 || (not . snd) burst) then updated else magicStart world (world^.selectedmagiccard)
 
 defaulter :: World -> World
 defaulter world = world&mode.~PError

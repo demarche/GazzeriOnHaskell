@@ -144,3 +144,15 @@ removeNowMagic world =
         now = world^.nowplayer
         newcosts = take now (world^.costs) ++ [(world^.costs)!!now - ((mcards!!now!!mindex)^.cost)] ++ drop (now + 1) (world^.costs)
     in ((world&magiccards .~ (take now mcards) ++ [take mindex (mcards!!now) ++ drop (mindex + 1) (mcards!!now)] ++ (drop (now + 1) mcards))&selectedmagiccard .~ -1)&costs.~ newcosts
+
+-- 指定の魔法を開始
+magicStart world index =
+    let mcards = world^.magiccards
+        now = world^.nowplayer
+    in (world&mode .~ Goto (Magic ((mcards!!now!!index)^.funcs) (Interpreter [])))&selectedmagiccard .~ index
+
+-- worldの変化から低・高バーストを検出
+detectLowHighburst src dst low =
+    let highhashes = [hashtree x | x <- src, not $ isLowburstTree x low] -- srcの低バーストでないハッシュ
+        ignoreLowBurst = filter (\x -> elem (hashtree x) highhashes) dst -- dstからsrcの低バーストのものを除いたもの
+    in (or [burstCounter x /= Nothing && numofTreeCard x <= low | x <- ignoreLowBurst], or [burstCounter x /= Nothing && numofTreeCard x > low | x <- ignoreLowBurst])

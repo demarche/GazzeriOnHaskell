@@ -38,6 +38,10 @@ cardparser = do
         conStr = if 1 == length (group conlst) then "全て" ++ (conToStr up) else concat $ intersperse "," $ map conToStr conlst
     return $ (show width) ++ "x" ++ (show height) ++ "," ++ conStr ++ "のカード"
 
+burstparser = do
+    canburst <- number
+    return $ "※このカードはバーストすることが" ++ if canburst == 0 then "できない\n" else "できる\n"
+
 description = do
     try $ string "select_fieldcard"
     spaces
@@ -74,8 +78,15 @@ description = do
     spaces
     x <- cardparser
     spaces
-    y <- number
-    return $ x ++ "をフィールドに置く．※このカードはバーストすることが" ++ if y == 0 then "できない\n" else "できる\n"
+    y <- burstparser
+    return $ x ++ "をフィールドに置く．" ++ y
+    Text.Parsec.<|> do
+    try $ string "changefieldcard"
+    spaces
+    x <- cardparser
+    spaces
+    y <- burstparser
+    return $ x ++ "に変化させる．" ++ y
 
 descriptionMagic :: String -> String
 descriptionMagic str =  case parse description "desc" str of

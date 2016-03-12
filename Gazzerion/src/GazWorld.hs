@@ -156,6 +156,9 @@ magicStart world index =
         now = world^.nowplayer
     in (world&mode .~ Goto (Magic ((mcards!!now!!index)^.funcs) (Interpreter [])))&selectedmagiccard .~ index
 
+-- 魔法の使用を中断
+escapeMagic world = (world&mode.~Choice)&selectedmagiccard .~ -1
+
 -- worldの変化から低・高バーストを検出
 detectLowHighburst src dst low =
     let highhashes = [hashtree x | x <- src, not $ isLowburstTree x low] -- srcの低バーストでないハッシュ

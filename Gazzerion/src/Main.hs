@@ -27,6 +27,7 @@ update = do
     ph <- use mode
 
     mb <- mouseButtonL
+    mbR <- mouseButtonR
     mw <- mouseScroll
     fld <- use field
     forM_ fld $ \f -> (f `drawTree`) =<< use enviroment
@@ -77,11 +78,10 @@ update = do
                         mode .= Magic (drop 1 inst) mph
                         let myfunc = interpreterMagic $ myinst
                         modify myfunc
-                fld <- use field
-                embedIO $ print $ length fld
             SelectFieldCard num res -> do
                 focusFieldHash <- selectedCardHash =<< get
                 get >>= \y -> mapM_ (\x -> glowCardGHash x y) res
+                when mbR $ modify escapeMagic
                 when (mb && focusFieldHash /= Nothing) $ do
                     let arged = nub $ (takejust focusFieldHash):res
                     if length arged >= num
@@ -92,6 +92,7 @@ update = do
                 cursor <- (`drawFollowingCard` card) =<< get
                 when (mw^._y > 0) $ nowturn .= (nturn + 1) `mod` 4
                 when (mw^._y < 0) $ nowturn .= (nturn + 3) `mod` 4
+                when mbR $ modify escapeMagic
                 when mb $ do
                     fld <- use field
                     fsize <- use fieldsize

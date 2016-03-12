@@ -76,15 +76,20 @@ decktohand world =
 burst :: World -> World
 burst world =
     let hashes = map (\y -> hashtree y) $ filter (\x ->  burstCounter x /= Nothing && numofTreeCard x > (world^.lowburst)) (world^.field) -- バーストする木のハッシュ
-        bursted = filter (\x -> not $ elem (hashtree x) hashes ) (world^.field)
-        newfield = unDeadEnd bursted
+        notbursted = filter (\x -> notElem (hashtree x) hashes ) (world^.field)
+        bursted = filter (\x -> elem (hashtree x) hashes) (world^.field)
+        newfield = unDeadEnd notbursted
         now = world^.nowplayer
-        newcosts = take now (world^.costs) ++ [(world^.costs)!!now + sum [numofTreeCard x | x <- world^.field, burstCounter x /= Nothing]] ++ drop (now + 1) (world^.costs)
-    in (`resetinit` hashes) $ updateField $ (world&field.~newfield)&costs.~newcosts
+        newcosts = take now (world^.costs) ++ [(world^.costs)!!now + sum (map numofTreeCard bursted)] ++ drop (now + 1) (world^.costs)
+    in (`resetinit` bursted) $ updateField $ (world&field.~newfield)&costs.~newcosts
 
 -- イニシエーションリセット
-resetinit :: World -> [Int] -> World
-resetinit world hashes = world&initiations.~ map (\x -> case x of Just y -> if y `elem` hashes then Nothing else x ; Nothing -> x) (world^.initiations)
+resetinit :: World -> [Tree] -> World
+resetinit world bursttrees = world&initiations.~ map (\x -> case x of Just y -> if any (y `elemInit`) bursttrees then Nothing else x ; Nothing -> x) (world^.initiations) where
+    elemInit hash tree = case tree of
+        Fork h -> if hashtree tree == hash then True else any (hash `elemInit`) (h^.trees)
+        _ -> False
+resetinit2 world hashes = world&initiations.~ map (\x -> case x of Just y -> if y `elem` hashes then Nothing else x ; Nothing -> x) (world^.initiations)
 
 -- 魔法の使用可能状態をセット
 setCanMagic :: World -> World

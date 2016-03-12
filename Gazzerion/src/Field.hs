@@ -5,6 +5,7 @@ import Control.Lens
 import Control.Monad.State
 import FreeGame
 import Data.Bits
+import Data.List(delete)
 
 fieldSize = Size 18 24
 
@@ -15,7 +16,7 @@ fieldSize = Size 18 24
 --      ts  : 追加される木
 insertCard :: Int -> ModCard -> Int -> [Tree] -> [Tree]
 insertCard x y s ts = inserts x tree ts where
-    tree = toTree y (States 0 0 s) ts [x + 2]
+    tree = toTree y (States (-1) (-1) s) ts [x + 2]
 inserts :: Int -> Tree -> [Tree] -> [Tree]
 inserts x y ts = map (\t -> insert x y t) ts
 insert x y (Fork h) = Fork $ h&trees.~map (insert x y) (h^.trees)
@@ -25,8 +26,8 @@ insert _ _ t = t
 -- 未使用PassageIDを木から探索
 unusedPassage :: [Tree] -> [Int]
 unusedPassage t = [x | x <-[0..], not (x `elem` usedPassages t)]
-usedPassages ts = concat $ map usedPassage ts
-usedPassage (Fork h) = concat $ map usedPassage (h^.trees)
+usedPassages ts = concatMap usedPassage ts
+usedPassage (Fork h) = concatMap usedPassage (h^.trees)
 usedPassage (Passage p) = [p]
 usedPassage _ = []
 
@@ -58,7 +59,7 @@ propCoordinate :: Tree -> Tree
 propCoordinate tree = case tree of
     (Fork h) -> Fork (h&trees.~(zipWith prop (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..])) where
         prop child n = case child of
-            (Fork hc) -> propCoordinate $ Fork (hc&states.~(connectedState hc h n))
+            (Fork hc) -> propCoordinate $ Fork (hc&states.~if hc^.states^.posx < 0 || hc^.states^.posy < 0 then connectedState hc h n else hc^.states)
             _ -> child
     _ -> tree
 -- おけない場所のDeadEnd化
@@ -81,9 +82,8 @@ canput crd trn tree world =
         (Fork h) -> concat $ zipWith putlist (h^.trees) $ map (`mod` 4) [4-h^.states^.turn..] where
             putlist child n = case child of
                 (Fork hc) -> canput crd trn (Fork hc) world
-                (Passage p) -> if (parentConnector < 0 || parentConnector == childConnector) && not colDetection && not cannotPutFlag then [(p, connected)] else [] where
-                    parentConnector = (h^.card^.connector)!!((n + h^.states^.turn) `mod` 4)
-                    childConnector = (crd^.connector)!!((n + trn + 2) `mod` 4)
+                (Passage p) -> if connect && not colDetection && not cannotPutFlag then [(p, connected)] else [] where
+                    connect = isConnect h (Hub crd (States 0 0 trn) []) n
                     --衝突判定
                     connected = connectedState (Hub crd (States 0 0 trn) []) h n
                     colDetection = isCollision (Hub crd connected []) (world^.field)
@@ -102,6 +102,13 @@ canputInit crd trn world =
             1 -> [(-1, States x 0 trn) | x <- [0..(fsize^.width - turned^.width)]]
         iscol = \x -> not $ isCollision (Hub crd (snd x) []) (world^.field)
     in filter iscol allinitposes
+
+-- srcがtargetに対して方向nで接続しているか
+isConnect :: Hub -> Hub -> Int -> Bool
+isConnect src target n =
+    let targetConnector = (target^.card^.connector)!!((n + target^.states^.turn + 2) `mod` 4)
+        srcConnector = (src^.card^.connector)!!((n + src^.states^.turn) `mod` 4)
+    in (targetConnector < 0 && srcConnector /= 0) || targetConnector == srcConnector
 
 -- バーストフラグ
 isburst :: [Tree] -> Int -> Bool
@@ -189,28 +196,31 @@ unDeadEndTree tree field = case tree of
             _ -> unDeadEndTree child field
     _ -> tree
 
+-- 特定ハッシュのhubをtreeから取得
+getHashCard tree hash = case tree of
+    Fork h -> if hash == hashtree tree
+            then [h]
+            else concatMap (`getHashCard` hash) (h^.trees)
+    _ -> []
+
 -- フィールドの特定hashのカードを操作
 modifyCard hash field f =
     let childForks tree hash = case tree of
             Fork h -> if hash == hashtree tree
                     then filter extracttrees (h^.trees)
-                    else concat $ map (`childForks` hash) (h^.trees)
+                    else concatMap (`childForks` hash) (h^.trees)
                 where extracttrees t = case t of Fork _ -> True; _ -> False
             _ -> []
-        modifyCardbyTree tree hash = case tree of
-            Fork h -> if hash == hashtree tree
-                    then DeadEnd
-                    else Fork $ h&trees.~map (`modifyCardbyTree` hash) (h^.trees)
-            _ -> tree
-        getHashCard tree hash = case tree of
-            Fork h -> if hash == hashtree tree
-                    then [h]
-                    else concat $ map (`getHashCard` hash) (h^.trees)
-            _ -> []
-        childs = concat $ map (`childForks` hash) field
-        removed =  map (`modifyCardbyTree` hash) field
-        targetHub = head $ concat $ map (`getHashCard` hash) field
+        childs = concatMap (`childForks` hash) field
+        removed =  map (\x -> modifyCardbyTree x hash (\h -> DeadEnd)) field
+        targetHub = head $ concatMap (`getHashCard` hash) field
     in unDeadEnd $ removed ++ childs ++ [f targetHub]
+
+modifyCardbyTree tree hash f = case tree of
+    Fork h -> if hash == hashtree tree
+            then f h
+            else Fork $ h&trees.~map (\x -> modifyCardbyTree x hash f) (h^.trees)
+    _ -> tree
 
 -- フィールドのカード枚数
 numofFieldCard :: [Tree] -> Int
@@ -218,3 +228,23 @@ numofFieldCard field = sum $ map numofTreeCard field
 numofTreeCard tree = case tree of
             Fork h -> 1 + numofFieldCard (h^.trees)
             _ -> 0
+
+-- cardの周辺を再接続
+reconnect :: Int -> [Tree]-> [Tree]
+reconnect hash field =
+    let mindex = head $ filter (\x -> not $ null $ getHashCard (field!!x) hash) [0..(length field) - 1] -- メインの木のインデックス
+        mainHub = head $ concatMap (`getHashCard` hash) field
+        isConnectTree tree n = case tree of -- 木が接続可能か判定
+            Fork h -> if isConnect mainHub h n && connectedState h mainHub n == (h^.states) then True else or $ map (`isConnectTree` n) (h^.trees)
+            _ -> False
+        applicateTree n (srctree, ignore)
+            | n >= 0 =
+                let connectTree_index = filter (`isConnectTree` n) ignore
+                in applicateTree (n - 1) $ if null connectTree_index
+                    then (srctree, ignore)
+                    else let tindex = head connectTree_index
+                        in (modifyCardbyTree srctree hash (\h -> Fork (h&trees .~ take ((n + h^.states^.turn) `mod` (length $ h^.card^.connector)) (h^.trees)
+                         ++ [tindex] ++ drop (1 + (n + h^.states^.turn) `mod` (length $ h^.card^.connector)) (h^.trees))), delete tindex ignore)
+            | otherwise = (srctree, ignore)
+        applicated = applicateTree (length (mainHub^.trees) - 1) (Fork mainHub, delete (Fork mainHub) field)
+    in fst applicated : snd applicated

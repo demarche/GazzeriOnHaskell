@@ -246,9 +246,9 @@ selectedCardHash world = do
                           normal = mpos - v2Int (env^.gridx + env^.grid * h^.states^.posx) (env^.gridy + env^.grid * h^.states^.posy)
                 in if normal^._x >= 0 && normal^._y >= 0 && normal^._x < (itod $ csize^.width) && normal^._y < (itod $ csize^.height)
                         then [hashtree tree]
-                        else concat $ map search (h^.trees)
+                        else concatMap search (h^.trees)
             _ -> []
-        result = concat $ map search (world^.field)
+        result = concatMap search (world^.field)
     unless (null result) $ glowCardGHash (head result) world
     return $ if null result then Nothing else Just $ head result
 

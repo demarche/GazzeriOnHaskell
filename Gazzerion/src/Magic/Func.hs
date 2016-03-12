@@ -46,7 +46,7 @@ instruct = do
     return $ \world -> world&mode.~(Magic (magicinsts world) (SelectFieldCard x []))
     Text.Parsec.<|> do
     try $ string "clearfield"
-    return $ \world -> fractalfix (\x w -> (`resetinit` [x]) $ updateField $ w&field.~modifyCard x (w^.field) (\h -> DeadEnd)) (magicarg world) world
+    return $ \world -> fractalfix (\x w -> (`resetinit2` [x]) $ updateField $ w&field.~modifyCard x (w^.field) (\h -> DeadEnd)) (magicarg world) world
     Text.Parsec.<|> do
     try $ string "incput"
     spaces
@@ -92,19 +92,36 @@ instruct = do
     cd <- cardparser
     spaces
     canburst <- number
-    let noconnect h = h&trees.~map (\x -> NotConnect) (h^.trees)
+    let toNot h = h&trees.~map (\x -> NotConnect) (h^.trees)
     return $ \world ->
-        let putted = fractalfix (\x w -> w&field.~modifyCard x (w^.field) (\h -> Fork (noconnect h&card.~cd))) (magicarg world) world
+        let putted = fractalfix (\x w -> w&field.~modifyCard x (w^.field) (\h -> Fork (toNot h&card.~cd))) (magicarg world) world
             updated = updateField putted
             low = world^.lowburst
             burst = detectLowHighburst (putted^.field) (updated^.field) low
         in if (not . fst) burst && (canburst /= 0 || (not . snd) burst) then updated else magicStart world (world^.selectedmagiccard)
+    Text.Parsec.<|> do
+    try $ string "changefielddirection"
+    spaces
+    dir <- number
+    spaces
+    canburst <- number
+    let turncard x w =
+            let forest = (modifyCard x (w^.field) (\h -> Fork h))
+                extractHub (Fork h) = h
+                lhub = extractHub $ last forest
+            in reconnect x $ initiation (lhub^.card) ((lhub&(states.turn).~(dir + lhub^.states^.turn) `mod` (length $ lhub^.card^.connector))^.states) (init forest)
+    return $ \world ->
+        let putted = fractalfix (\x w -> w&field.~ turncard x w) (magicarg world) world
+            updated = updateField putted
+            low = world^.lowburst
+            burst = (False, False)--detectLowHighburst (putted^.field) (updated^.field) low
+        in if (not . fst) burst && (canburst /= 0 || (not . snd) burst) then updated else magicStart world (world^.selectedmagiccard)
 
-defaulter :: World -> World
-defaulter world = world&mode.~PError
+defaulter :: World -> String -> World
+defaulter world str = world&mode.~PError str
 
 interpreterMagic :: String -> World -> World
 interpreterMagic str =  case  parse instruct "inst" str of
         Right a -> a
-        Left _ -> defaulter
+        Left a -> (`defaulter` (show a))
 

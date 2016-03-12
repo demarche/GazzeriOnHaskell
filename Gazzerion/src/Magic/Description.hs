@@ -87,6 +87,13 @@ description = do
     spaces
     y <- burstparser
     return $ x ++ "に変化させる．" ++ y
+    Text.Parsec.<|> do
+    try $ string "changefielddirection"
+    spaces
+    dir <- number
+    spaces
+    canburst <- burstparser
+    return $ (show $ 90 * dir) ++ "度回転させる．" ++ canburst
 
 descriptionMagic :: String -> String
 descriptionMagic str =  case parse description "desc" str of

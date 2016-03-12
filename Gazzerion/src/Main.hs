@@ -10,6 +10,7 @@ import Control.Lens
 import Control.Monad (replicateM)
 import Control.Monad.State
 import Magic.Func
+import Magic.Load
 
 takejust (Just n) = n
 
@@ -52,8 +53,7 @@ update = do
             cmagic <- use canmagic
             if null (concat cpts) && not (or (cmagic!!now))
                 then mode .= Mate 0 ""
-                else do
-                    mode .= Choice
+                else mode .= Choice
         Choice -> do
             when (mb && focusCardIndex /= Nothing) $ do
                 checkmatedcounter .= 0
@@ -77,6 +77,8 @@ update = do
                         mode .= Magic (drop 1 inst) mph
                         let myfunc = interpreterMagic $ myinst
                         modify myfunc
+                fld <- use field
+                embedIO $ print $ length fld
             SelectFieldCard num res -> do
                 focusFieldHash <- selectedCardHash =<< get
                 get >>= \y -> mapM_ (\x -> glowCardGHash x y) res
@@ -181,8 +183,8 @@ update = do
                 mode .= Burst (count + 1) bursttree next
         GameOver -> do
             color red $ translate (V2 300 450) $ text font 48 $ (show (now+1)) ++ "P WIN"
-        PError -> do
-            color red $ translate (V2 300 450) $ text font 48 "Phase Error"
+        PError reason -> do
+            color red $ translate (V2 300 450) $ text font 48 ("Phase Error\n" ++ reason)
         Goto goto -> do
             mb <- mouseButtonL
             unless mb $ mode .= goto
@@ -195,15 +197,19 @@ mainLoop s = do
 
 initDecks2 :: StateT World Game ()
 initDecks2 = do
-    dmax <- use deckmax
-    let getDeck = [card_con [0,3,0,0], card_con [3,1,5,1], card_con [0,1,2,1], card_con [0,0,0,1], card_con [4,0,3,2], card_con [4,4,4,4], card_con [3,3,3,3]]
-        getDeck2 = [card_con [2,0,3,0], card_con [3,0,3,1], card_con [3,0,0,2], card_con [1,4,0,4], card_con [0,4,0,4], card_con [4,4,4,4], card_con [3,3,3,3]]
+    let getDeck = [card_con [3,0,3,0], card_con [3,2,3,0], card_con [3,0,3,3], card_con [0,0,0,1], card_con [4,0,3,2], card_con [4,4,4,4], card_con [3,3,3,3]]
+        getDeck2 = [card_con [3,0,3,0], card_con [3,0,3,3], card_con [3,0,0,2], card_con [1,4,0,4], card_con [0,4,0,4], card_con [4,4,4,4], card_con [3,3,3,3]]
+    mmax <- use maxmagiccards
+    onepair <- lift $ loadMagicAll
+    let mcs = replicate 2 onepair
     decks .= [getDeck, getDeck2]
+    magiccards .= mcs
+    maxmagiccards .= map length mcs
 
 main = runGame Windowed (Box (V2 0 0) (V2 1440 900)) $ do
     font <- loadFont "VL-PGothic-Regular.ttf"
     --cd <- evalStateT randCard ()
-    newW <- execStateT updateEnv =<< execStateT initDecks =<< return (makeWorld font)
+    newW <- execStateT updateEnv =<< execStateT initDecks2 =<< return (makeWorld font)
 
     {-}forever $ do
       color red $ translate (V2 24 240) $ text font 24 "Press SPACE to start"

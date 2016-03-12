@@ -11,7 +11,11 @@ import Control.Applicative ((<$>), (<*>), (<*), (*>))
 fractalfix f (x:xs) s = f x (fractalfix f xs s)
 fractalfix f [] s = s
 
-number = read <$> many1 digit
+num = read <$> many1 digit
+number = num Text.Parsec.<|> do
+    char '-'
+    n <- num
+    return $ - n
 
 magicinsts world = case world^.mode of
     Magic inst _ -> inst
@@ -92,9 +96,10 @@ instruct = do
     cd <- cardparser
     spaces
     canburst <- number
-    let toNot h = h&trees.~map (\x -> NotConnect) (h^.trees)
+    let adapt h = h&trees.~zipWith (\t c -> if c == 0 then NotConnect else DeadEnd) (h^.trees) (h^.card^.connector)
     return $ \world ->
-        let putted = fractalfix (\x w -> w&field.~modifyCard x (w^.field) (\h -> Fork (toNot h&card.~cd))) (magicarg world) world
+        let changecard x w = reconnect x $ unDeadEnd $ modifyCard x (w^.field) (\h -> Fork (adapt $ h&card.~cd))
+            putted = fractalfix (\x w -> w&field.~changecard x w) (magicarg world) world
             updated = updateField putted
             low = world^.lowburst
             burst = detectLowHighburst (putted^.field) (updated^.field) low
@@ -114,7 +119,7 @@ instruct = do
         let putted = fractalfix (\x w -> w&field.~ turncard x w) (magicarg world) world
             updated = updateField putted
             low = world^.lowburst
-            burst = (False, False)--detectLowHighburst (putted^.field) (updated^.field) low
+            burst = detectLowHighburst (putted^.field) (updated^.field) low
         in if (not . fst) burst && (canburst /= 0 || (not . snd) burst) then updated else magicStart world (world^.selectedmagiccard)
 
 defaulter :: World -> String -> World

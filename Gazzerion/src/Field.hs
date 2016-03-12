@@ -108,7 +108,7 @@ isConnect :: Hub -> Hub -> Int -> Bool
 isConnect src target n =
     let targetConnector = (target^.card^.connector)!!((n + target^.states^.turn + 2) `mod` 4)
         srcConnector = (src^.card^.connector)!!((n + src^.states^.turn) `mod` 4)
-    in (targetConnector < 0 && srcConnector /= 0) || targetConnector == srcConnector
+    in (targetConnector < 0 && srcConnector /= 0) || (targetConnector /= 0 && srcConnector < 0) || targetConnector == srcConnector
 
 -- バーストフラグ
 isburst :: [Tree] -> Int -> Bool

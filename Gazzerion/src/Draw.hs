@@ -7,6 +7,7 @@ import Control.Lens
 import Control.Monad.State
 import FreeGame.Data.Font
 import Data.Maybe
+import System.Random
 
 itod :: Int -> Double
 itod n = (fromIntegral n) :: Double
@@ -25,7 +26,8 @@ cardScale csize world = Size (csize^.width * world^.enviroment^.grid)  (csize^.h
 drawCard card env = do
     color gray $ polygon [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
     color black $ polygonOutline [V2 0 0, V2 wid 0, V2 wid hei, V2 0 hei]
-    forM_ [0..len-1] $ \i -> unless ((card^.connector)!!i==0) $ color (colors!!((card^.connector)!!i-1)) $ translate (conPos!!i) $ polygon[V2 0 0, V2 cGrid 0, V2 cGrid cGrid, V2 0 cGrid] where
+    rnd <- randomness (0,4)
+    forM_ [0..len-1] $ \i -> unless ((card^.connector)!!i==0) $ color (colors!!(if (card^.connector)!!i < 0 then rnd else (card^.connector)!!i-1)) $ translate (conPos!!i) $ polygon[V2 0 0, V2 cGrid 0, V2 cGrid cGrid, V2 0 cGrid] where
         wid = itod $ card^.size^.width * env^.grid
         hei = itod $ card^.size^.height * env^.grid
         len = length (card^.connector)

@@ -129,12 +129,13 @@ update = do
             when (mb && f && nowpt `elem` map snd (cp!!nhk)) $ do
                 let psg = fst $ (cp!!nhk)!!((elemIndices nowpt (map snd (cp!!nhk)))!!0) -- 置く場所のPassageID
                 fld <- use field
-                when (psg == -1) $ do
-                    let newtree = initiation nowcard nowpt fld
-                    field .= newtree
-                    init <- use initiations
-                    initiations .= (take now init) ++ [Just (hashtree $ head newtree)] ++ (drop (now + 1) init)
-                unless (psg == -1) $ field .= insertCard psg nowcard nturn fld
+                if psg == -1
+                    then do
+                        let newtree = initiation nowcard nowpt fld
+                        field .= newtree
+                        init <- use initiations
+                        initiations .= (take now init) ++ [Just (hashtree $ head newtree)] ++ (drop (now + 1) init)
+                    else field .= insertCard psg nowcard nturn fld
                 put =<< execStateT (dripHandcard nhk) =<< get -- 手札からカードををドロップ
                 hcards <- use handcards
                 deck <- use decks
@@ -209,7 +210,7 @@ initDecks2 = do
 main = runGame Windowed (Box (V2 0 0) (V2 1440 900)) $ do
     font <- loadFont "VL-PGothic-Regular.ttf"
     --cd <- evalStateT randCard ()
-    newW <- execStateT updateEnv =<< execStateT initDecks2 =<< return (makeWorld font)
+    newW <- execStateT updateEnv =<< execStateT initDecks =<< return (makeWorld font)
 
     {-}forever $ do
       color red $ translate (V2 24 240) $ text font 24 "Press SPACE to start"

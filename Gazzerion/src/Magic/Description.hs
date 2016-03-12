@@ -2,7 +2,7 @@ module Magic.Description where
 import Text.Parsec
 import Data.List.Split
 import Data.List
-import Foreign.C.String          (newCStringLen)
+import Foreign.C.String (newCStringLen)
 import FreeGame
 
 sjisByteSize :: String -> IO Int
@@ -17,7 +17,11 @@ insertNewline (x:xs) total = do
         else return $ x:nextstr
 insertNewline [] _ = return ""
 
-number = read <$> many1 digit
+num = read <$> many1 digit
+number = num Text.Parsec.<|> do
+    char '-'
+    n <- num
+    return $ - n
 
 cardparser = do
     string "card"
@@ -34,7 +38,7 @@ cardparser = do
     spaces
     height <- number
     let conlst = [up, right, down, left]
-        conToStr con = case con of 6 -> "自由色"; 0 -> "接続不可"; 1 -> "赤"; 2 -> "青"; 3 -> "黒"; 4 -> "緑"; 5 -> "黄"
+        conToStr con = case con of (-1) -> "自由色"; 0 -> "接続不可"; 1 -> "赤"; 2 -> "青"; 3 -> "黒"; 4 -> "緑"; 5 -> "黄"
         conStr = if 1 == length (group conlst) then "全て" ++ (conToStr up) else concat $ intersperse "," $ map conToStr conlst
     return $ (show width) ++ "x" ++ (show height) ++ "," ++ conStr ++ "のカード"
 
